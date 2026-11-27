@@ -46,6 +46,11 @@ namespace EchoIslands
         public void Take(ToolController tools)
         {
             if (busy || tools == null) return;
+            if (kind == ToolKind.Staff && tools.staff || kind == ToolKind.Clock && tools.clock)
+            {
+                gameObject.SetActive(false);
+                return;
+            }
             busy = true;
             if (cachedColliders == null) cachedColliders = GetComponentsInChildren<Collider>(true);
             for (int i = 0; i < cachedColliders.Length; i++)
@@ -66,6 +71,7 @@ namespace EchoIslands
             if (hold == null && Camera.main != null) hold = Camera.main.transform;
             if (hold == null)
             {
+                tools.Give(kind);
                 FinishPickup();
                 yield break;
             }

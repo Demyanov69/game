@@ -27,7 +27,7 @@ namespace EchoIslands
         bool setupFinished;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        static void Install()
+        public static void EnsureInstalled()
         {
             var marker = GameObject.Find("L1_BridgeBarrier_LightOnly");
             if (marker == null || GameObject.Find("__REPAIRED_L1_CROSSING") != null) return;
@@ -105,7 +105,7 @@ namespace EchoIslands
             if (orb != null)
             {
                 var pos = orb.transform.position;
-                pos.y = Mathf.Max(GroundHeight(pos) + 1.65f, 4.9f);
+                pos.y = GroundHeight(pos) + 1.55f;
                 orb.transform.position = pos;
                 EchoVisualOverhaul.ReskinOrb(orb.GetComponent<Orb>());
             }
@@ -131,37 +131,46 @@ namespace EchoIslands
         {
             var staff = GameObject.Find("L1_StaffPickup_Air");
             if (staff != null)
-                MakeFirstLevelCheckpoint("01 • Staff trail", staff.transform.position);
+                MakeFirstLevelCheckpoint(1,"Берег посоха","Наведите взгляд на парящий посох и нажмите E.",staff.transform.position);
 
             // The bank on the exit side of the repaired wooden bridge is solid
             // in both worlds. Never put the checkpoint on its disappearing deck.
             Vector3 farBank = bridge.TransformPoint(new Vector3(5.8f, 0f, DeckCenterZ));
-            MakeFirstLevelCheckpoint("02 • River crossed", farBank);
+            MakeFirstLevelCheckpoint(2,"Другой берег","Сфера видна в тёмном мире. Ищите частицы вдоль тропы.",farBank);
 
             if (orb != null)
-                MakeFirstLevelCheckpoint("03 • Spectral clearing", orb.transform.position);
+                MakeFirstLevelCheckpoint(3,"Сфера эха","Нажмите E, чтобы забрать сферу.",orb.transform.position);
             if (portal != null)
-                MakeFirstLevelCheckpoint("04 • Portal approach",
+                MakeFirstLevelCheckpoint(4,"Первый портал","Поднесите сферу к порталу и нажмите E.",
                     portal.transform.position - portal.transform.forward * 3.5f);
         }
 
-        void MakeFirstLevelCheckpoint(string label, Vector3 near)
+        void MakeFirstLevelCheckpoint(int id, string title, string hint, Vector3 near)
         {
-            if (transform.Find("L1_Checkpoint_" + label) != null) return;
+            if (transform.Find("L1_Checkpoint_" + id) != null) return;
             float ground = GroundHeight(near);
             Vector3 position = new Vector3(near.x, ground + 1.1f, near.z);
-            var point = new GameObject("L1_Checkpoint_" + label);
+            var point = new GameObject("L1_Checkpoint_" + id);
+            point.layer = 2;
             point.transform.SetParent(transform, true);
             point.transform.position = position;
             var range = point.AddComponent<SphereCollider>();
             range.isTrigger = true;
             range.radius = 1.8f;
+            var body = point.AddComponent<Rigidbody>();
+            body.isKinematic = true;
+            body.useGravity = false;
 
-            var respawn = new GameObject("Respawn " + label).transform;
+            var respawn = new GameObject("Respawn " + title).transform;
             respawn.SetParent(point.transform, false);
             respawn.localPosition = new Vector3(0f, .20f, 0f);
+            var start = LevelFlow.Instance != null && LevelFlow.Instance.spawns.Length > 0 ? LevelFlow.Instance.spawns[0] : null;
+            if (start != null) respawn.rotation = start.rotation;
             var trigger = point.AddComponent<CheckpointTrigger>();
             trigger.checkpoint = respawn;
+            trigger.id = id;
+            trigger.roomTitle = title;
+            trigger.roomHint = hint;
 
             // Visual marker - textured bronze/iron disk, non-blocking for walking.
             var marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);

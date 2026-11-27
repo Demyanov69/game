@@ -113,12 +113,22 @@ namespace EchoIslands
             PushShader();
         }
 
+        public void SnapTo(WorldKind world)
+        {
+            Target = world;
+            blend = world == WorldKind.Dark ? 1f : 0f;
+            TransitionProgress = 1f;
+            IsTransitioning = false;
+            PushShader();
+            Changed?.Invoke(world);
+        }
+
         public void Toggle() => SetWorld(Target == WorldKind.Light ? WorldKind.Dark : WorldKind.Light);
 
         Vector3 ResolveTransitionOrigin()
         {
             var player = FindAnyObjectByType<FirstPersonController>();
-            if (player != null) return player.transform.position + Vector3.up * 0.9f;
+            if (player != null) return player.transform.position + player.transform.up * 0.9f;
             var cam = Camera.main;
             if (cam != null) return cam.transform.position;
             return transform.position;

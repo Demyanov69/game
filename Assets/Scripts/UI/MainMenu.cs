@@ -1,4 +1,6 @@
+using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace EchoIslands
 {
@@ -12,23 +14,31 @@ namespace EchoIslands
         Page page = Page.Home, returnPage = Page.Home;
         bool open = true, confirmReset, startedPlay;
 
-        Texture2D pixel;
+        static bool? resumeFirstLevel;
+        Texture2D backdrop, shade;
         GUIStyle title, subtitle, text, tiny, tileLabel, tileLabelDim;
 
         public bool IsOpen => open;
 
         void Awake()
         {
-            pixel = new Texture2D(1, 1, TextureFormat.RGBA32, false);
-            pixel.SetPixel(0, 0, Color.white);
-            pixel.Apply();
-            pixel.wrapMode = TextureWrapMode.Repeat;
+            backdrop = Resources.Load<Texture2D>("EchoMenu/Vault");
+            shade = new Texture2D(128,1,TextureFormat.RGBA32,false);
+            shade.wrapMode = TextureWrapMode.Clamp;
+            for (int i=0; i<shade.width; i++)
+                shade.SetPixel(i,0,new Color(.024f,.033f,.045f,Mathf.Lerp(.98f,.02f,i/(shade.width-1f))));
+            shade.Apply();
         }
 
-        void Start()
+        IEnumerator Start()
         {
-            AudioListener.volume = PlayerPrefs.GetFloat("echo_volume", .85f);
+            AudioListener.volume = PlayerPrefs.GetFloat("echo_volume",.85f);
             Open();
+            if (!resumeFirstLevel.HasValue) yield break;
+            bool restore = resumeFirstLevel.Value;
+            resumeFirstLevel = null;
+            yield return null;
+            CloseAndPlay(1,restore);
         }
 
         void Update()
@@ -47,6 +57,7 @@ namespace EchoIslands
 
         public void Open()
         {
+            if (startedPlay && flow != null) flow.SaveCurrent();
             open = true;
             page = startedPlay ? Page.Pause : Page.Home;
             confirmReset = false;
@@ -72,6 +83,13 @@ namespace EchoIslands
 
         void CloseAndPlay(int level, bool restore)
         {
+            var scene = SceneManager.GetActiveScene();
+            if (level == 1 && startedPlay && scene.buildIndex >= 0)
+            {
+                resumeFirstLevel = restore;
+                SceneManager.LoadScene(scene.buildIndex);
+                return;
+            }
             open = false;
             startedPlay = true;
             Time.timeScale = 1f;
@@ -100,8 +118,8 @@ namespace EchoIslands
         {
             if (title != null) return;
 
-            title = MakeLabel(34, FontStyle.Bold, new Color(.98f, .96f, .92f));
-            subtitle = MakeLabel(13, FontStyle.Normal, new Color(.92f, .90f, .86f));
+            title = MakeLabel(52, FontStyle.Bold, new Color(.98f, .96f, .92f));
+            subtitle = MakeLabel(15, FontStyle.Normal, new Color(.92f, .90f, .86f));
             text = MakeLabel(14, FontStyle.Normal, new Color(.95f, .95f, .94f));
             tiny = MakeLabel(11, FontStyle.Normal, new Color(.82f, .82f, .82f));
             tileLabel = MakeLabel(15, FontStyle.Bold, new Color(.98f, .97f, .94f));
@@ -125,54 +143,17 @@ namespace EchoIslands
         {
             var old = GUI.color;
             GUI.color = color;
-            GUI.DrawTexture(rect, pixel);
+            GUI.DrawTexture(rect, Texture2D.whiteTexture);
             GUI.color = old;
         }
 
         void DrawScene(float sw, float sh)
         {
-            // Sky
-            Fill(new Rect(0, 0, sw * .5f, sh), new Color(.89f, .65f, .40f, 1f));
-            Fill(new Rect(sw * .5f, 0, sw * .5f, sh), new Color(.20f, .20f, .24f, 1f));
-            Fill(new Rect(sw * .5f - 1.5f, 0, 3f, sh), new Color(.91f, .91f, .90f, .13f));
-
-            // Clouds left
-            Fill(new Rect(42f, 54f, 180f, 16f), new Color(1f, .95f, .82f, .38f));
-            Fill(new Rect(76f, 92f, 136f, 13f), new Color(1f, .95f, .84f, .28f));
-            Fill(new Rect(sw * .44f, 48f, 122f, 15f), new Color(1f, .95f, .84f, .32f));
-            Fill(new Rect(sw * .60f, 88f, 114f, 12f), new Color(.64f, .70f, .74f, .14f));
-
-            // Background mountain range left
-            Fill(new Rect(sw * .28f, sh * .22f, sw * .24f, sh * .17f), new Color(.88f, .39f, .31f, 1f));
-            Fill(new Rect(sw * .16f, sh * .32f, sw * .26f, sh * .08f), new Color(.50f, .21f, .43f, 1f));
-            Fill(new Rect(sw * .34f, sh * .34f, sw * .17f, sh * .06f), new Color(.56f, .25f, .48f, 1f));
-
-            // Dead ridge right
-            Fill(new Rect(sw * .56f, sh * .27f, sw * .22f, sh * .13f), new Color(.29f, .31f, .35f, 1f));
-            Fill(new Rect(sw * .75f, sh * .24f, sw * .18f, sh * .16f), new Color(.24f, .26f, .30f, 1f));
-            Fill(new Rect(sw * .62f, sh * .35f, sw * .24f, sh * .07f), new Color(.18f, .19f, .22f, 1f));
-
-            // Forest layers left
-            Fill(new Rect(0, sh * .38f, sw * .54f, sh * .11f), new Color(.36f, .14f, .35f, 1f));
-            Fill(new Rect(0, sh * .43f, sw * .54f, sh * .14f), new Color(.24f, .12f, .28f, 1f));
-            Fill(new Rect(0, sh * .49f, sw * .54f, sh * .18f), new Color(.16f, .10f, .20f, 1f));
-
-            // Forest layers right - dead / cold
-            Fill(new Rect(sw * .46f, sh * .40f, sw * .54f, sh * .11f), new Color(.19f, .16f, .24f, 1f));
-            Fill(new Rect(sw * .46f, sh * .46f, sw * .54f, sh * .16f), new Color(.14f, .12f, .18f, 1f));
-            Fill(new Rect(sw * .46f, sh * .52f, sw * .54f, sh * .20f), new Color(.10f, .09f, .13f, 1f));
-
-            // Foreground valley silhouettes left/right
-            Fill(new Rect(0, sh * .78f, sw * .22f, sh * .22f), new Color(.07f, .06f, .10f, 1f));
-            Fill(new Rect(sw * .80f, sh * .73f, sw * .20f, sh * .27f), new Color(.05f, .05f, .08f, 1f));
-
-            // Central mist/portal seam
-            float pulse = .75f + Mathf.Sin(Time.unscaledTime * 1.1f) * .08f;
-            Fill(new Rect(sw * .5f - 26f, sh * .30f, 52f, sh * .44f), new Color(.82f, .89f, .95f, .08f * pulse));
-            Fill(new Rect(sw * .5f - 2f, sh * .24f, 4f, sh * .50f), new Color(.93f, .96f, .97f, .10f));
-
-            // Subtle left overlay for readability.
-            Fill(new Rect(36f, 36f, 360f, sh - 72f), new Color(.06f, .05f, .07f, .14f));
+            Fill(new Rect(0,0,sw,sh),new Color(.026f,.038f,.056f));
+            if (backdrop != null)
+                GUI.DrawTexture(new Rect(0f,0f,sw,sh),backdrop,ScaleMode.ScaleAndCrop);
+            GUI.DrawTexture(new Rect(0f,0f,Mathf.Min(sw,800f),sh),shade,ScaleMode.StretchToFill);
+            Fill(new Rect(0f,0f,sw,4f),new Color(.76f,.52f,.27f));
         }
 
         bool MenuButton(Rect rect, string label, bool active = true)
@@ -180,30 +161,23 @@ namespace EchoIslands
             Event e = Event.current;
             bool hover = rect.Contains(e.mousePosition) && active;
 
-            // outer shadow / base
-            Fill(new Rect(rect.x, rect.y + 3f, rect.width, rect.height), new Color(0f, 0f, 0f, .18f));
-            Fill(rect, new Color(.07f, .07f, .09f, .50f));
-
-            // split stone slab
-            Fill(new Rect(rect.x + 1f, rect.y + 1f, rect.width * .5f - 1f, rect.height - 2f),
-                active ? new Color(.57f, .48f, .34f, hover ? .92f : .82f) : new Color(.32f, .32f, .32f, .70f));
-            Fill(new Rect(rect.x + rect.width * .5f, rect.y + 1f, rect.width * .5f - 1f, rect.height - 2f),
-                active ? new Color(.20f, .24f, .28f, hover ? .94f : .84f) : new Color(.26f, .26f, .28f, .74f));
-
-            Fill(new Rect(rect.x, rect.y, rect.width, 1f), new Color(1f, 1f, 1f, .12f));
-            Fill(new Rect(rect.x, rect.yMax - 1f, rect.width, 1f), new Color(0f, 0f, 0f, .25f));
-            Fill(new Rect(rect.x + 16f, rect.yMax - 7f, rect.width - 32f, 1.5f), hover ? new Color(.98f, .98f, .95f, .92f) : new Color(.95f, .95f, .92f, .35f));
-
-            GUI.Label(new Rect(rect.x + 16f, rect.y + 7f, rect.width - 24f, rect.height - 12f), label, active ? tileLabel : tileLabelDim);
-            if (hover) GUI.Label(new Rect(rect.x + rect.width - 26f, rect.y + 7f, 16f, rect.height - 12f), ">", tileLabel);
+            Color edge = active ? new Color(.77f,.54f,.31f) : new Color(.25f,.30f,.34f);
+            Fill(new Rect(rect.x,rect.y+2f,rect.width,rect.height),new Color(0f,0f,0f,.30f));
+            Fill(rect,active && hover ? new Color(.23f,.16f,.12f,.98f) : new Color(.055f,.078f,.10f,.93f));
+            Fill(new Rect(rect.x,rect.y,2f,rect.height),edge);
+            Fill(new Rect(rect.x,rect.yMax-1f,rect.width,1f),new Color(.48f,.31f,.16f,.40f));
+            GUI.Label(new Rect(rect.x+15f,rect.y+2f,rect.width-40f,rect.height-4f),
+                label,active?tileLabel:tileLabelDim);
+            if (active && hover)
+                GUI.Label(new Rect(rect.xMax-24f,rect.y+2f,17f,rect.height-4f),"›",tileLabel);
 
             return active && GUI.Button(rect, GUIContent.none, GUIStyle.none);
         }
 
         void DrawListHeader(float x, float y)
         {
-            GUI.Label(new Rect(x, y, 320f, 52f), "ECHO ISLANDS", title);
-            GUI.Label(new Rect(x, y + 58f, 350f, 40f), "Два мира: живой свет и мёртвая тьма. Откройте путь между ними.", subtitle);
+            GUI.Label(new Rect(x, y, 430f, 73f), "Echo Islands", title);
+            GUI.Label(new Rect(x, y + 77f, 355f, 29f), "Светлый мир  /  Проклятый мир", subtitle);
         }
 
         void OnGUI()
@@ -211,7 +185,7 @@ namespace EchoIslands
             if (!open) return;
             InitStyles();
 
-            float scale = Mathf.Clamp(Screen.height / 900f, .72f, 1.16f);
+            float scale = Mathf.Min(1.25f,Screen.height / 690f,Screen.width / 530f);
             Matrix4x4 old = GUI.matrix;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1f));
             float sw = Screen.width / scale;
@@ -219,14 +193,13 @@ namespace EchoIslands
 
             DrawScene(sw, sh);
 
-            float listX = Mathf.Max(52f, sw * .07f);
-            float listY = sh * .13f;
-            float listWidth = Mathf.Min(330f, sw * .28f);
+            float listX = Mathf.Clamp(sw * .055f,30f,100f);
+            float listY = Mathf.Min(sh*.14f,122f);
+            float listWidth = Mathf.Min(333f, sw-listX-36f);
 
             DrawListHeader(listX, listY);
             DrawPage(listX, listY + 116f, listWidth);
 
-            GUI.Label(new Rect(listX, sh - 44f, 360f, 18f), "LOW POLY  ·  DUNGEON OBBY  ·  TWO WORLDS", tiny);
             GUI.matrix = old;
         }
 
@@ -315,7 +288,7 @@ namespace EchoIslands
                 if (MenuButton(new Rect(x, lineY + 160f, width, 38f), "ОТМЕНА")) confirmReset = false;
             }
 
-            if (MenuButton(new Rect(x, y + 290f, width, 40f), "ГОТОВО / НАЗАД"))
+            if (MenuButton(new Rect(x, y + (confirmReset ? 332f : 282f), width, 40f), "ГОТОВО / НАЗАД"))
             {
                 PlayerPrefs.Save();
                 page = returnPage;
@@ -334,7 +307,7 @@ namespace EchoIslands
 
         void OnDestroy()
         {
-            if (pixel != null) Destroy(pixel);
+            if (shade != null) Destroy(shade);
         }
     }
 }

@@ -9,7 +9,8 @@ namespace EchoIslands
         void OnTriggerStay(Collider other) { Enter(other); }
         void Enter(Collider other)
         {
-            if (other.GetComponentInParent<FirstPersonController>() == null) return;
+            var flow = LevelFlow.Instance;
+            if (flow == null || flow.Controller == null || other.GetComponentInParent<FirstPersonController>() != flow.Controller) return;
             var portal = GetComponentInParent<PortalFrame>();
             if (portal != null) portal.TryEnter();
         }

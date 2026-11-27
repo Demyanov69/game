@@ -16,7 +16,7 @@ namespace EchoIslands
         {
             origin = transform.position;
             deck = GetComponent<Collider>();
-            rider = LevelFlow.Instance.player.GetComponent<FirstPersonController>();
+            rider = LevelFlow.Instance != null ? LevelFlow.Instance.Controller : null;
         }
 
         void Update()
@@ -26,14 +26,19 @@ namespace EchoIslands
             Vector3 next = origin + travel * Mathf.Sin(elapsed * 2f*Mathf.PI / period);
             Vector3 delta = next - transform.position;
             bool carry = false;
-            if (deck.enabled && rider != null && rider.enabled)
+            if (deck.enabled && rider != null && rider.enabled && !rider.IsTurningGravity)
             {
                 Vector3 foot = rider.transform.position;
-                carry = Physics.Raycast(foot+Vector3.up*.16f,Vector3.down,out var hit,.29f,
+                Vector3 up = rider.transform.up;
+                carry = Physics.Raycast(foot+up*.16f,-up,out var hit,.33f,
                     ~0,QueryTriggerInteraction.Ignore) && hit.collider == deck;
             }
             transform.position = next;
-            if (carry) rider.ApplyExternalMotion(delta);
+            if (carry)
+            {
+                Physics.SyncTransforms();
+                rider.ApplyExternalMotion(delta);
+            }
         }
     }
 }

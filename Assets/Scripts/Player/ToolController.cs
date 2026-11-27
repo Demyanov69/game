@@ -16,6 +16,8 @@ namespace EchoIslands
 
         int flashSlot = -1;
         float clockLeft;
+        float clockCooldown;
+        public float ClockCooldown => clockCooldown;
         public float ClockRemaining => clockRunning ? clockLeft : 0f;
         WorldKind clockReturn;
         bool clockRunning;
@@ -66,11 +68,14 @@ namespace EchoIslands
                 WorldState.Instance.SetWorld(clockReturn);
             clockRunning = false;
             clockLeft = 0f;
+            clockCooldown = 0f;
         }
 
         void UpdateClock()
         {
-            if (clock && !clockRunning && Input.GetKeyDown(KeyCode.Q))
+            if (!clock) return;
+            clockCooldown = Mathf.Max(0f,clockCooldown-Time.deltaTime);
+            if (!clockRunning && clockCooldown <= 0f && Input.GetKeyDown(KeyCode.Q))
             {
                 clockReturn = WorldState.Instance.Target;
                 WorldState.Instance.Toggle();
@@ -83,14 +88,27 @@ namespace EchoIslands
             {
                 WorldState.Instance.SetWorld(clockReturn);
                 clockRunning = false;
+                clockCooldown = .70f;
             }
+        }
+
+        public bool Aim(out RaycastHit hit)
+        {
+            Vector3 origin = maskOrigin != null ? maskOrigin.position : transform.position + transform.up*1.5f;
+            Vector3 dir = maskOrigin != null ? maskOrigin.forward : transform.forward;
+            return Physics.Raycast(origin,dir,out hit,useDistance,Physics.DefaultRaycastLayers,QueryTriggerInteraction.Collide);
         }
 
         void TryUse()
         {
-            Vector3 origin = maskOrigin != null ? maskOrigin.position : transform.position + Vector3.up * 1.5f;
-            Vector3 dir = maskOrigin != null ? maskOrigin.forward : transform.forward;
-            if (!Physics.Raycast(origin, dir, out RaycastHit hit, useDistance, ~0, QueryTriggerInteraction.Collide)) return;
+            if (!Aim(out RaycastHit hit)) return;
+
+            var pedestal = hit.collider.GetComponentInParent<StaffPedestal>();
+            if (pedestal != null)
+            {
+                pedestal.TryPlace(this);
+                return;
+            }
 
             var pickup = hit.collider.GetComponentInParent<ToolPickup>();
             if (pickup != null)
@@ -131,6 +149,20 @@ namespace EchoIslands
                 if (socket.targetPortal != null) socket.targetPortal.TryInsertHeld();
                 else socket.TryInsertHeld();
             }
+        }
+
+        public bool RemoveStaff()
+        {
+            if (!staff) return false;
+            staff = false;
+            if (heldStaffVisual != null)
+            {
+                heldStaffVisual.SetActive(false);
+                Destroy(heldStaffVisual);
+                heldStaffVisual = null;
+            }
+            if (WorldState.Instance != null) WorldState.Instance.SetWorld(WorldKind.Light);
+            return true;
         }
 
         public void ClearTools()
