@@ -54,6 +54,7 @@ namespace EchoIslands
             transitionTargetBlend = blend;
             Target = blend >= 0.5f ? WorldKind.Dark : WorldKind.Light;
             EnsureVisualSystems();
+            PushMasks();
             PushShader();
         }
 
@@ -62,11 +63,7 @@ namespace EchoIslands
             if (debugToggleEnabled && Input.GetKeyDown(debugToggleKey))
                 Toggle();
 
-            if (!IsTransitioning)
-            {
-                PushShader();
-                return;
-            }
+            if (!IsTransitioning || Time.deltaTime <= 0f) return;
 
             transitionElapsed += Time.deltaTime;
             float duration = Mathf.Max(0.2f, transitionDuration);
@@ -115,6 +112,7 @@ namespace EchoIslands
 
         public void SnapTo(WorldKind world)
         {
+            if (Target == world && !IsTransitioning) return;
             Target = world;
             blend = world == WorldKind.Dark ? 1f : 0f;
             TransitionProgress = 1f;
@@ -127,8 +125,9 @@ namespace EchoIslands
 
         Vector3 ResolveTransitionOrigin()
         {
-            var player = FindAnyObjectByType<FirstPersonController>();
-            if (player != null) return player.transform.position + player.transform.up * 0.9f;
+            var flow = LevelFlow.Instance;
+            var player = flow != null ? flow.player : null;
+            if (player != null) return player.position + player.up * .9f;
             var cam = Camera.main;
             if (cam != null) return cam.transform.position;
             return transform.position;
@@ -166,6 +165,7 @@ namespace EchoIslands
             if (slot < 0 || slot > 3) return;
             masks[slot] = new Vector4(center.x, center.y, center.z, Mathf.Max(0f, radius));
             targets[slot] = Mathf.Clamp01(targetBlend);
+            PushMasks();
         }
 
         public void ClearMask(int slot)
@@ -173,6 +173,7 @@ namespace EchoIslands
             if (slot < 0 || slot > 3) return;
             masks[slot] = Vector4.zero;
             targets[slot] = 0f;
+            PushMasks();
         }
 
         public float BlendAt(Vector3 worldPos)
@@ -209,11 +210,6 @@ namespace EchoIslands
         {
             Shader.SetGlobalFloat("_EchoWorldBlend", blend);
             Shader.SetGlobalVector("_EchoWorld", new Vector4(blend, 0, 0, 0));
-            Shader.SetGlobalVector("_EchoMask0", masks[0]);
-            Shader.SetGlobalVector("_EchoMask1", masks[1]);
-            Shader.SetGlobalVector("_EchoMask2", masks[2]);
-            Shader.SetGlobalVector("_EchoMask3", masks[3]);
-            Shader.SetGlobalVector("_EchoMaskTarget", new Vector4(targets[0], targets[1], targets[2], targets[3]));
             Shader.SetGlobalFloat("_EchoTransitionProgress", TransitionProgress);
             Shader.SetGlobalVector("_EchoTransitionOrigin", new Vector4(TransitionOrigin.x, TransitionOrigin.y, TransitionOrigin.z, 1f));
             Shader.SetGlobalFloat("_EchoTransitionRadius", transitionRadius);
@@ -221,12 +217,13 @@ namespace EchoIslands
             Shader.SetGlobalFloat("_EchoTransitionPulse", IsTransitioning ? Mathf.Sin(TransitionProgress * Mathf.PI) : 0f);
         }
 
-        void OnGUI()
+        void PushMasks()
         {
-            if (!debugToggleEnabled) return;
-            string label = Current == WorldKind.Dark ? "Светлый мир" : "Темный мир";
-            if (GUI.Button(new Rect(18f, 18f, 190f, 34f), "T / " + label))
-                Toggle();
+            Shader.SetGlobalVector("_EchoMask0", masks[0]);
+            Shader.SetGlobalVector("_EchoMask1", masks[1]);
+            Shader.SetGlobalVector("_EchoMask2", masks[2]);
+            Shader.SetGlobalVector("_EchoMask3", masks[3]);
+            Shader.SetGlobalVector("_EchoMaskTarget", new Vector4(targets[0], targets[1], targets[2], targets[3]));
         }
 
         void OnDestroy()

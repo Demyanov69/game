@@ -1,182 +1,82 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace EchoIslands
 {
-    /// <summary>
-    /// Changes the actual ground diffuse textures of the original Polytope level-1
-    /// terrains on world switch. Original TerrainData / TerrainLayer assets are never
-    /// edited: independent play-mode copies are installed and safely restored.
-    /// </summary>
     [DefaultExecutionOrder(-40)]
     public sealed class WorldTerrainTextureSwap : MonoBehaviour
     {
-        struct Binding
-        {
-            public Terrain terrain;
-            public TerrainCollider collider;
-            public TerrainData original;
-            public TerrainData runtimeCopy;
-        }
-
-        readonly List<Binding> bindings = new List<Binding>();
-        readonly Dictionary<TerrainData, TerrainData> runtimeCopies =
-            new Dictionary<TerrainData, TerrainData>();
-        readonly Dictionary<TerrainData, TerrainLayer[]> dayLayers =
-            new Dictionary<TerrainData, TerrainLayer[]>();
-        readonly Dictionary<TerrainData, TerrainLayer[]> nightLayers =
-            new Dictionary<TerrainData, TerrainLayer[]>();
-        readonly List<TerrainLayer> instantiatedLayers = new List<TerrainLayer>();
-        readonly Dictionary<TerrainData, TreePrototype[]> deadTrees = new Dictionary<TerrainData, TreePrototype[]>();
-        GameObject pine, fruit, shrub;
-        GameObject DeadModel(string name)
-        {
-            if (name.StartsWith("PT_Pine_Tree") && name.Contains("green")) return pine;
-            if (name.StartsWith("PT_Fruit_Tree") && !name.Contains("dead") && !name.Contains("stump")) return fruit;
-            if (name.StartsWith("PT_Generic_Shrub") && !name.Contains("dead")) return shrub;
-            return null;
-        }
-        void PrepareTrees()
-        {
-            pine = Resources.Load<GameObject>("EchoL1/PT_Pine_Tree_03_dead");
-            fruit = Resources.Load<GameObject>("EchoL1/PT_Fruit_Tree_01_dead");
-            shrub = Resources.Load<GameObject>("EchoL1/PT_Generic_Shrub_01_dead");
-            var flow = LevelFlow.Instance;
-            if (flow == null || flow.levelRoots[0] == null) return;
-            foreach (var tree in flow.levelRoots[0].GetComponentsInChildren<Transform>())
-            {
-                var model = DeadModel(tree.name);
-                if (model == null || tree.GetComponentInParent<DungeonRuin>() != null) continue;
-                var group = new GameObject("Seasonal grove").transform;
-                group.SetParent(tree.parent,false);
-                group.localPosition = tree.localPosition;
-                group.localRotation = tree.localRotation;
-                group.localScale = tree.localScale;
-                tree.SetParent(group,false);
-                tree.localPosition = Vector3.zero;
-                tree.localRotation = Quaternion.identity;
-                tree.localScale = Vector3.one;
-                var dead = Instantiate(model,group,false);
-                dead.transform.localPosition = Vector3.zero;
-                dead.transform.localRotation = Quaternion.identity;
-                dead.transform.localScale = Vector3.one;
-                var swap = group.gameObject.AddComponent<DungeonRuin>();
-                swap.intact = tree.gameObject;
-                swap.ruined = dead;
-                dead.SetActive(false);
-            }
-        }
-        Texture2D darkGrass;
-        Texture2D darkGround;
-        bool initialized;
-        bool lastDark;
+        readonly Dictionary<Terrain, Material> originals = new();
+        Material renderingMaterial;
 
         void Start()
         {
-            PrepareTrees();
-            darkGrass = Resources.Load<Texture2D>("EchoWorldGround/DarkGrass");
-            darkGround = Resources.Load<Texture2D>("EchoWorldGround/DarkGround");
-            if (darkGrass == null || darkGround == null) return;
-
-            var terrains = Terrain.activeTerrains;
-            for (int i = 0; i < terrains.Length; i++)
+            var shader = Shader.Find("Echo/Terrain");
+            var darkGround = Resources.Load<Texture2D>("EchoWorldGround/DarkGround");
+            if (shader != null && shader.isSupported && darkGround != null)
             {
-                Terrain terrain = terrains[i];
-                if (terrain == null || terrain.terrainData == null) continue;
-                TerrainData source = terrain.terrainData;
-                TerrainData copy;
-                if (!runtimeCopies.TryGetValue(source, out copy))
-                {
-                    copy = Instantiate(source);
-                    copy.name = source.name + " (world-skin runtime only)";
-                    copy.hideFlags = HideFlags.DontSave;
-                    runtimeCopies.Add(source, copy);
-
-                    TerrainLayer[] originalLayers = source.terrainLayers;
-                    var light = new TerrainLayer[originalLayers.Length];
-                    var dark = new TerrainLayer[originalLayers.Length];
-                    for (int j = 0; j < originalLayers.Length; j++)
-                    {
-                        var layer = originalLayers[j];
-                        if (layer == null) continue;
-                        light[j] = Instantiate(layer);
-                        dark[j] = Instantiate(layer);
-                        light[j].hideFlags = HideFlags.DontSave;
-                        dark[j].hideFlags = HideFlags.DontSave;
-                        instantiatedLayers.Add(light[j]);
-                        instantiatedLayers.Add(dark[j]);
-                        Texture2D diffuse = layer.diffuseTexture;
-                        bool grass = diffuse != null &&
-                            diffuse.name.IndexOf("Grass", StringComparison.OrdinalIgnoreCase) >= 0;
-                        dark[j].diffuseTexture = grass ? darkGrass : darkGround;
-                        dark[j].name = layer.name + " / spectral night";
-                    }
-                    var prototypes = source.treePrototypes;
-                    bool changed = false;
-                    for (int k=0; k<prototypes.Length; k++)
-                    {
-                        var prototype = prototypes[k];
-                        if (prototype.prefab == null) continue;
-                        var dead = DeadModel(prototype.prefab.name);
-                        if (dead == null) continue;
-                        prototypes[k] = new TreePrototype { prefab = dead, bendFactor = prototype.bendFactor };
-                        changed = true;
-                    }
-                    if (changed) deadTrees.Add(copy,prototypes);
-                    dayLayers.Add(copy, light);
-                    nightLayers.Add(copy, dark);
-                    copy.terrainLayers = light;
-                }
-
-                var collider = terrain.GetComponent<TerrainCollider>();
-                bindings.Add(new Binding { terrain = terrain, collider = collider,
-                    original = source, runtimeCopy = copy });
-                terrain.terrainData = copy;
-                if (collider != null) collider.terrainData = copy;
+                renderingMaterial = new Material(shader) { name = "Echo Islands terrain", enableInstancing = true };
+                Shader.SetGlobalTexture("_EchoTerrainDark", darkGround);
             }
-            initialized = bindings.Count > 0;
-            if (initialized)
-                Apply(WorldState.Instance != null && WorldState.Instance.Current == WorldKind.Dark);
+
+            foreach (var terrain in Terrain.activeTerrains)
+            {
+                terrain.drawInstanced = true;
+                terrain.heightmapPixelError = Mathf.Max(terrain.heightmapPixelError, 9f);
+                terrain.basemapDistance = Mathf.Min(terrain.basemapDistance, 30f);
+                terrain.treeDistance = Mathf.Min(terrain.treeDistance, 74f);
+                terrain.treeBillboardDistance = Mathf.Min(terrain.treeBillboardDistance, 24f);
+                terrain.treeMaximumFullLODCount = Mathf.Min(terrain.treeMaximumFullLODCount, 24);
+                terrain.detailObjectDistance = Mathf.Min(terrain.detailObjectDistance, 28f);
+                terrain.detailObjectDensity = Mathf.Min(terrain.detailObjectDensity, .5f);
+                terrain.shadowCastingMode = ShadowCastingMode.Off;
+                if (renderingMaterial == null) continue;
+                originals.Add(terrain, terrain.materialTemplate);
+                terrain.materialTemplate = renderingMaterial;
+            }
+
+            PrepareNearbyTrees();
         }
 
-        void LateUpdate()
+        static void PrepareNearbyTrees()
         {
-            if (!initialized || WorldState.Instance == null) return;
-            bool nowDark = WorldState.Instance.Current == WorldKind.Dark;
-            if (nowDark != lastDark) Apply(nowDark);
-        }
-
-        void Apply(bool dark)
-        {
-            foreach (var pair in runtimeCopies)
+            var flow = LevelFlow.Instance;
+            if (flow == null || flow.levelRoots[0] == null) return;
+            var pine = Resources.Load<GameObject>("EchoL1/PT_Pine_Tree_03_dead");
+            var fruit = Resources.Load<GameObject>("EchoL1/PT_Fruit_Tree_01_dead");
+            var shrub = Resources.Load<GameObject>("EchoL1/PT_Generic_Shrub_01_dead");
+            var course = flow.spawns[0] != null ? flow.spawns[0].position + Vector3.right * 13f : Vector3.zero;
+            foreach (var tree in flow.levelRoots[0].GetComponentsInChildren<Transform>())
             {
-                TerrainData data = pair.Value;
-                if (deadTrees.TryGetValue(data,out var trees))
-                {
-                    data.treePrototypes = dark ? trees : pair.Key.treePrototypes;
-                    data.RefreshPrototypes();
-                }
-                data.terrainLayers = dark ? nightLayers[data] : dayLayers[data];
+                Vector3 offset = tree.position - course;
+                if (offset.x*offset.x + offset.z*offset.z > 42f*42f) continue;
+                string name = tree.name;
+                GameObject deadModel = name.StartsWith("PT_Pine_Tree") && name.Contains("green") ? pine :
+                    name.StartsWith("PT_Fruit_Tree") && !name.Contains("dead") && !name.Contains("stump") ? fruit :
+                    name.StartsWith("PT_Generic_Shrub") && !name.Contains("dead") ? shrub : null;
+                if (deadModel == null || tree.GetComponentInParent<DungeonRuin>() != null) continue;
+                var group = new GameObject("Seasonal grove").transform;
+                group.SetParent(tree.parent,false);
+                group.SetLocalPositionAndRotation(tree.localPosition, tree.localRotation);
+                group.localScale = tree.localScale;
+                tree.SetParent(group,false);
+                tree.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                tree.localScale = Vector3.one;
+                var dead = Instantiate(deadModel,group,false);
+                dead.transform.SetLocalPositionAndRotation(Vector3.zero, Quaternion.identity);
+                dead.transform.localScale = Vector3.one;
+                dead.SetActive(false);
+                var swap = group.gameObject.AddComponent<DungeonRuin>();
+                swap.Configure(tree.gameObject, dead);
             }
-            lastDark = dark;
         }
 
         void OnDestroy()
         {
-            // Restoring references first prevents Editor play-mode from holding
-            // dangling runtime TerrainData while the original assets stay intact.
-            foreach (var binding in bindings)
-            {
-                if (binding.terrain != null)
-                    binding.terrain.terrainData = binding.original;
-                if (binding.collider != null)
-                    binding.collider.terrainData = binding.original;
-            }
-            foreach (var pair in runtimeCopies)
-                if (pair.Value != null) Destroy(pair.Value);
-            foreach (var layer in instantiatedLayers)
-                if (layer != null) Destroy(layer);
+            foreach (var pair in originals)
+                if (pair.Key != null) pair.Key.materialTemplate = pair.Value;
+            if (renderingMaterial != null) Destroy(renderingMaterial);
         }
     }
 }

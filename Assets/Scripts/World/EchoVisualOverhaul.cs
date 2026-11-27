@@ -10,7 +10,6 @@ namespace EchoIslands
     public static class EchoVisualOverhaul
     {
         static readonly Color Infection = new Color(0.10f, 0.72f, 0.62f, 1f);
-        static readonly Color OrbCyan = new Color(0.10f, 1f, 0.86f, 1f);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Install()
@@ -133,26 +132,17 @@ namespace EchoIslands
             visuals.localScale = Vector3.one;
 
             // The small opaque-looking core is a fallback for missing particle shaders.
-            // The transparent outer glow and hundreds of particles define the sphere.
+            // The transparent glow and two particle shells define the sphere.
             MakeOrbHeart(visuals, "LuminousHeart", .28f, 3.2f, 0f);
             MakeOrbHeart(visuals, "GlassAura", .95f, 1.7f, 1f);
             var motion = visuals.gameObject.AddComponent<OrbVisualAnimator>();
             motion.rotationSpeed = 12f;
 
-            var library = Resources.Load<ReflektOrbVFXLibrary>("ReflektOrbVFXLibrary");
-            if (library != null)
-            {
-                InstantiateParticlePrefab(library.plexusPrefab, visuals, "OrbPlexus", new Vector3(1.0f,.9f,1.0f), 0f);
-                InstantiateParticlePrefab(library.greenSparksPrefab, visuals, "OrbSparks", new Vector3(.65f,.65f,.65f), 0f);
-                InstantiateParticlePrefab(library.starAuraPrefab, visuals, "OrbStarAura", new Vector3(.53f,.53f,.53f), 0f);
-            }
-
             BuildParticleCore(visuals);
             BuildParticleOrbit(visuals, "OrbOrbitA", 0f, .45f, .95f);
             BuildParticleOrbit(visuals, "OrbOrbitB", 2.1f, .39f, -1.2f);
-            BuildParticleOrbit(visuals, "OrbOrbitC", .85f, .49f, .65f);
-            BuildParticleShell(visuals,"Dense spectral surface",.48f,380,new Color(.12f,1f,.90f));
-            BuildParticleShell(visuals,"Iridescent comet dust",.39f,260,new Color(.84f,.54f,1f));
+            BuildParticleShell(visuals,"Dense spectral surface",.48f,100,new Color(.12f,1f,.90f));
+            BuildParticleShell(visuals,"Iridescent comet dust",.39f,48,new Color(.84f,.54f,1f));
             BuildOrbLight(visuals);
             // WorldVariant was first cached before these visuals existed.
             // Refresh includes the new renderers, lights and particle systems.
@@ -183,33 +173,6 @@ namespace EchoIslands
             go.GetComponent<MeshRenderer>().sharedMaterial=mat;
         }
 
-        static void InstantiateParticlePrefab(GameObject prefab, Transform parent, string name, Vector3 scale, float yRotation)
-        {
-            if (prefab == null) return;
-            var go = Object.Instantiate(prefab, parent, false);
-            go.name = name;
-            go.transform.localPosition = Vector3.zero;
-            go.transform.localRotation = Quaternion.Euler(0f, yRotation, 0f);
-            go.transform.localScale = scale;
-            TintParticleTree(go, OrbCyan);
-
-            foreach (var collider in go.GetComponentsInChildren<Collider>(true))
-                if (collider != null) collider.enabled = false;
-        }
-
-        static void TintParticleTree(GameObject root, Color tint)
-        {
-            foreach (var renderer in root.GetComponentsInChildren<ParticleSystemRenderer>(true))
-            {
-                if (renderer == null || renderer.sharedMaterial == null) continue;
-                var mat = new Material(renderer.sharedMaterial);
-                if (mat.HasProperty("_Color")) mat.SetColor("_Color", tint);
-                if (mat.HasProperty("_TintColor")) mat.SetColor("_TintColor", tint);
-                if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", tint * 1.2f);
-                renderer.sharedMaterial = mat;
-            }
-        }
-
         static void BuildParticleCore(Transform parent)
         {
             var go = new GameObject("OrbParticleCore");
@@ -222,23 +185,18 @@ namespace EchoIslands
             main.startSpeed = new ParticleSystem.MinMaxCurve(0.015f, 0.12f);
             main.startSize = new ParticleSystem.MinMaxCurve(0.045f, 0.11f);
             main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.35f, 1f, 0.9f, 1f), new Color(0.92f, 1f, 1f, 1f));
-            main.maxParticles = 70;
+            main.maxParticles = 26;
             main.simulationSpace = ParticleSystemSimulationSpace.Local;
 
             var emission = ps.emission;
-            emission.rateOverTime = 42f;
+            emission.rateOverTime = 24f;
 
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Sphere;
             shape.radius = 0.035f;
             shape.radiusThickness = 1f;
 
-            var noise = ps.noise;
-            noise.enabled = true;
-            noise.strength = 0.35f;
-            noise.frequency = 1.2f;
-            noise.scrollSpeed = 0.7f;
-            noise.octaveCount = 2;
+
 
             var color = ps.colorOverLifetime;
             color.enabled = true;
@@ -258,7 +216,7 @@ namespace EchoIslands
                 renderer.sharedMaterial = mat;
             }
             ps.Play();
-            ps.Emit(42);
+            ps.Emit(14);
         }
 
         static void BuildParticleOrbit(Transform parent, string name, float zRotation, float radius, float orbitalSpeed)
@@ -318,11 +276,6 @@ namespace EchoIslands
             shape.shapeType = ParticleSystemShapeType.Sphere;
             shape.radius = radius;
             shape.radiusThickness = 0.2f;
-            var noise = ps.noise;
-            noise.enabled = true;
-            noise.frequency = .34f;
-            noise.strength = .085f;
-            noise.scrollSpeed = .22f;
             var col = ps.colorOverLifetime;
             col.enabled = true;
             var gradient = new Gradient();
@@ -351,6 +304,7 @@ namespace EchoIslands
             light.intensity = 4.0f;
             light.range = 5.0f;
             light.shadows = LightShadows.None;
+            light.renderMode = LightRenderMode.ForceVertex;
         }
 
         /// <summary>

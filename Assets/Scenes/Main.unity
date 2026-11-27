@@ -6164,7 +6164,6 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 10000000207}
   - component: {fileID: 1304752615}
   - component: {fileID: 1304752617}
   - component: {fileID: 1304752616}
@@ -6230,7 +6229,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.05
-  far clip plane: 250
+  far clip plane: 115
   field of view: 60
   orthographic: 0
   orthographic size: 5
@@ -6242,8 +6241,8 @@ Camera:
   m_TargetTexture: {fileID: 0}
   m_TargetDisplay: 0
   m_TargetEye: 3
-  m_HDR: 1
-  m_AllowMSAA: 1
+  m_HDR: 0
+  m_AllowMSAA: 0
   m_AllowDynamicResolution: 0
   m_ForceIntoRT: 0
   m_OcclusionCulling: 1
@@ -13578,7 +13577,7 @@ Transform:
   m_GameObject: {fileID: 10000000098}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 64.0, y: 2.45, z: 66.0}
+  m_LocalPosition: {x: 52.8, y: 2.45, z: 67.8}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -13649,24 +13648,6 @@ MonoBehaviour:
   lightAccent: {r: 1, g: 0.35, b: 0.58, a: 1}
   lightGold: {r: 1, g: 0.78, b: 0.18, a: 1}
   darkAccent: {r: 0, g: 1, b: 0.88, a: 1}
---- !u!114 &10000000207
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1304752614}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3e5d7a8b9c1f4d2e8a6b0c3f5e7d9a11, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  shader: {fileID: 0}
-  lightAccent: {r: 1, g: 0.35, b: 0.58, a: 1}
-  lightGold: {r: 1, g: 0.78, b: 0.18, a: 1}
-  darkAccent: {r: 0, g: 1, b: 0.88, a: 1}
-  stableStrength: 0.82
-
 --- !u!1 &3000000001
 GameObject:
   m_ObjectHideFlags: 0

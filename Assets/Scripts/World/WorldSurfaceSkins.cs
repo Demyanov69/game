@@ -44,25 +44,17 @@ namespace EchoIslands
 
             if (GetComponent<WorldState>() != null)
             {
-                var renderers = FindObjectsByType<MeshRenderer>(
-                    FindObjectsInactive.Include, FindObjectsSortMode.None);
-                foreach (var r in renderers)
-                    if (r != null && r.gameObject.activeInHierarchy &&
-                        !IsGeneratedDungeon(r.transform)) Bind(r);
+                var flow = LevelFlow.Instance;
+                var forestRoot = flow != null ? flow.levelRoots[0] : null;
+                var renderers = forestRoot != null ? forestRoot.GetComponentsInChildren<MeshRenderer>(true) :
+                    FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
+                foreach (var renderer in renderers) Bind(renderer);
             }
             else
             {
-                // Only this particular generated level, never stale scene roots.
-                foreach (var r in GetComponentsInChildren<MeshRenderer>(true)) Bind(r);
+                foreach (var renderer in GetComponentsInChildren<MeshRenderer>(true)) Bind(renderer);
             }
             scanRoutine = null;
-        }
-
-        static bool IsGeneratedDungeon(Transform tr)
-        {
-            for (var t = tr; t != null; t = t.parent)
-                if (t.name.StartsWith("Level_") && t.name.EndsWith("_Dungeon")) return true;
-            return false;
         }
 
         static bool IsSpecialObject(Transform tr)

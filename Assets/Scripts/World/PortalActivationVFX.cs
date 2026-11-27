@@ -50,6 +50,7 @@ namespace EchoIslands
         }
         void LateUpdate()
         {
+            if (!active && energyLevel <= 0f) return;
             time+=Time.deltaTime;
             float target=active?1f:0f;
             energyLevel=Mathf.MoveTowards(energyLevel,target,Time.deltaTime/Mathf.Max(.1f,activationDuration));

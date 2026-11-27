@@ -28,7 +28,8 @@ namespace EchoIslands
         Light[] directionalLights;
         Material skyboxInstance;
         bool hasSkybox;
-        float refreshTimer;
+        float lastBlend = -1f;
+        bool wasInDungeon;
         Color originalFogColor;
         float originalFogDensity;
         bool originalFog;
@@ -64,19 +65,19 @@ namespace EchoIslands
         void Start()
         {
             RefreshLights();
-            Apply(WorldState.Instance != null ? WorldState.Instance.blend : 0f);
+            Update();
         }
 
         void Update()
         {
-            if (WorldState.Instance == null) return;
-            refreshTimer -= Time.deltaTime;
-            if (refreshTimer <= 0f)
-            {
-                RefreshLights();
-                refreshTimer = 0.75f;
-            }
-            Apply(WorldState.Instance.blend);
+            var state = WorldState.Instance;
+            if (state == null) return;
+            bool dungeon = LevelFlow.Instance != null && LevelFlow.Instance.current > 1;
+            float blend = state.blend;
+            if (dungeon == wasInDungeon && Mathf.Approximately(lastBlend, blend)) return;
+            lastBlend = blend;
+            wasInDungeon = dungeon;
+            Apply(blend,dungeon);
         }
 
         void RefreshLights()
@@ -92,15 +93,14 @@ namespace EchoIslands
             directionalLights = list.ToArray();
         }
 
-        void Apply(float rawBlend)
+        void Apply(float rawBlend, bool dungeon)
         {
             float blend = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(rawBlend));
             RenderSettings.fog = true;
-            bool dungeon = LevelFlow.Instance != null && LevelFlow.Instance.current > 1;
             RenderSettings.fogMode = dungeon ? FogMode.ExponentialSquared : originalFogMode;
             RenderSettings.ambientMode = dungeon ? UnityEngine.Rendering.AmbientMode.Trilight : originalAmbientMode;
             RenderSettings.fogColor = Color.Lerp(dungeon?new Color(.24f,.155f,.087f):lightFog,darkFog,blend);
-            RenderSettings.fogDensity = dungeon ? Mathf.Lerp(.020f,.035f,blend) : Mathf.Lerp(lightFogDensity,darkFogDensity,blend);
+            RenderSettings.fogDensity = dungeon ? Mathf.Lerp(.046f,.062f,blend) : Mathf.Lerp(lightFogDensity,darkFogDensity,blend);
             RenderSettings.ambientSkyColor = Color.Lerp(dungeon?new Color(.65f,.48f,.32f):lightAmbientSky,darkAmbientSky,blend);
             RenderSettings.ambientEquatorColor = Color.Lerp(dungeon?new Color(.51f,.37f,.25f):lightAmbientEquator,darkAmbientEquator,blend);
             RenderSettings.ambientGroundColor = Color.Lerp(dungeon?new Color(.29f,.17f,.10f):lightAmbientGround,darkAmbientGround,blend);
@@ -141,7 +141,6 @@ namespace EchoIslands
                 new Color(0.01f, 0.012f, 0.012f, 1f),
                 new Color(0.02f, 0.45f, 0.40f, 1f),
                 blend));
-            Shader.SetGlobalFloat("_EchoWorldBlend", blend);
         }
 
         void OnDestroy()

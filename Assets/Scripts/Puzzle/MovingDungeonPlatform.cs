@@ -26,7 +26,8 @@ namespace EchoIslands
             Vector3 next = origin + travel * Mathf.Sin(elapsed * 2f*Mathf.PI / period);
             Vector3 delta = next - transform.position;
             bool carry = false;
-            if (deck.enabled && rider != null && rider.enabled && !rider.IsTurningGravity)
+            if (deck.enabled && rider != null && rider.enabled && !rider.IsTurningGravity &&
+                (rider.transform.position - transform.position).sqrMagnitude <= 12f)
             {
                 Vector3 foot = rider.transform.position;
                 Vector3 up = rider.transform.up;

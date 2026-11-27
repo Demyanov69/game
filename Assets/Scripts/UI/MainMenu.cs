@@ -16,6 +16,10 @@ namespace EchoIslands
 
         static bool? resumeFirstLevel;
         Texture2D backdrop, shade;
+        Camera viewCamera;
+        int gameCullingMask;
+        CameraClearFlags gameClearFlags;
+        bool sceneHidden;
         GUIStyle title, subtitle, text, tiny, tileLabel, tileLabelDim;
 
         public bool IsOpen => open;
@@ -59,6 +63,7 @@ namespace EchoIslands
         {
             if (startedPlay && flow != null) flow.SaveCurrent();
             open = true;
+            ShowScene(false);
             page = startedPlay ? Page.Pause : Page.Home;
             confirmReset = false;
             if (fps != null) fps.SetControl(false);
@@ -68,6 +73,7 @@ namespace EchoIslands
         void Resume()
         {
             open = false;
+            ShowScene(true);
             Time.timeScale = 1f;
             if (fps != null) fps.SetControl(true);
         }
@@ -92,6 +98,7 @@ namespace EchoIslands
             }
             open = false;
             startedPlay = true;
+            ShowScene(true);
             Time.timeScale = 1f;
             if (flow != null) flow.Begin(level, restore);
             if (fps != null) fps.SetControl(true);
@@ -101,8 +108,28 @@ namespace EchoIslands
         {
             open = true;
             page = Page.Win;
+            ShowScene(false);
             if (fps != null) fps.SetControl(false);
             Time.timeScale = 0f;
+        }
+
+        void ShowScene(bool visible)
+        {
+            if (viewCamera == null) viewCamera = Camera.main;
+            if (viewCamera == null || sceneHidden == !visible) return;
+            sceneHidden = !visible;
+            if (visible)
+            {
+                viewCamera.cullingMask = gameCullingMask;
+                viewCamera.clearFlags = gameClearFlags;
+            }
+            else
+            {
+                gameCullingMask = viewCamera.cullingMask;
+                gameClearFlags = viewCamera.clearFlags;
+                viewCamera.clearFlags = CameraClearFlags.SolidColor;
+                viewCamera.cullingMask = 0;
+            }
         }
 
         public void OnQuit()
@@ -177,7 +204,6 @@ namespace EchoIslands
         void DrawListHeader(float x, float y)
         {
             GUI.Label(new Rect(x, y, 430f, 73f), "Echo Islands", title);
-            GUI.Label(new Rect(x, y + 77f, 355f, 29f), "Светлый мир  /  Проклятый мир", subtitle);
         }
 
         void OnGUI()
@@ -198,7 +224,7 @@ namespace EchoIslands
             float listWidth = Mathf.Min(333f, sw-listX-36f);
 
             DrawListHeader(listX, listY);
-            DrawPage(listX, listY + 116f, listWidth);
+            DrawPage(listX, listY + 84f, listWidth);
 
             GUI.matrix = old;
         }
@@ -307,6 +333,7 @@ namespace EchoIslands
 
         void OnDestroy()
         {
+            ShowScene(true);
             if (shade != null) Destroy(shade);
         }
     }

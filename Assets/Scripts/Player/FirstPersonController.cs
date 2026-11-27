@@ -6,10 +6,15 @@ namespace EchoIslands
     public class FirstPersonController : MonoBehaviour
     {
         public float walkSpeed=4.65f;
-        public float jumpHeight=1.08f; // ~8% more travel distance at the same running speed
+        public float jumpHeight=1.08f;
         public float gravity=-26f;
         public float lookSensitivity=2.2f;
         public Transform cameraPivot;
+        public const float DungeonSpeed = 5.65f;
+        public const float DungeonJumpHeight = 1.27f;
+        public const float DungeonGravity = -25f;
+        bool dungeonMovement;
+        public void SetDungeonMovement(bool active) => dungeonMovement = active;
         CharacterController cc;
         float pitch,verticalSpeed,slipUntil;
         float coyoteTimer;
@@ -95,6 +100,9 @@ namespace EchoIslands
             }
             bool wall = GravityOrientation != GravitySide.Floor;
             if (!wall && !cc.enabled) return;
+            float speed = dungeonMovement ? DungeonSpeed : walkSpeed;
+            float jump = dungeonMovement ? DungeonJumpHeight : jumpHeight;
+            float accelerationDown = dungeonMovement ? DungeonGravity : gravity;
             float sens=lookSensitivity;
             transform.Rotate(0f,Input.GetAxis("Mouse X")*sens,0f,Space.Self);
             pitch=Mathf.Clamp(pitch-Input.GetAxis("Mouse Y")*sens,-85f,85f);
@@ -108,18 +116,18 @@ namespace EchoIslands
             else jumpBufferTimer -= Time.deltaTime;
             if (jumpBufferTimer > 0f && coyoteTimer > 0f)
             {
-                verticalSpeed = Mathf.Sqrt(jumpHeight * -2f * gravity);
+                verticalSpeed = Mathf.Sqrt(jump * -2f * accelerationDown);
                 jumpBufferTimer = 0f;
                 coyoteTimer = 0f;
             }
             if (Input.GetKeyUp(KeyCode.Space) && verticalSpeed > 0f) verticalSpeed *= .58f;
-            verticalSpeed += gravity * Time.deltaTime;
+            verticalSpeed += accelerationDown * Time.deltaTime;
             Vector3 wish=transform.right*Input.GetAxisRaw("Horizontal")+
                          transform.forward*Input.GetAxisRaw("Vertical");
             if(wish.sqrMagnitude>1f)wish.Normalize();
             bool slippery=Time.time<slipUntil;
             float acceleration=slippery?1.0f:(grounded?18f:8.5f);
-            momentum=Vector3.Lerp(momentum,wish * walkSpeed * (slippery ? .88f : 1f),1f-Mathf.Exp(-acceleration*Time.deltaTime));
+            momentum=Vector3.Lerp(momentum,wish * speed * (slippery ? .88f : 1f),1f-Mathf.Exp(-acceleration*Time.deltaTime));
             // Preserve precise air steering but avoid acceleration past the course's measured gap size.
             Vector3 displacement = (momentum + up * verticalSpeed) * Time.deltaTime;
             if (wall) MoveOnFace(displacement);

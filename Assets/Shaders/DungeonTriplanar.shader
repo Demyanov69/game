@@ -15,7 +15,7 @@ Shader "Echo/DungeonTriplanar"
         Tags { "RenderType" = "Opaque" }
         LOD 200
         CGPROGRAM
-        #pragma surface surf Standard fullforwardshadows
+        #pragma surface surf Lambert noforwardadd nolightmap noshadow
         #pragma target 3.0
         sampler2D _MainTex;
         sampler2D _DarkTex;
@@ -24,29 +24,23 @@ Shader "Echo/DungeonTriplanar"
         half _TileScale, _Glossiness, _DarkGlow;
         float _EchoWorldBlend;
         struct Input { float3 worldPos; float3 worldNormal; };
-        void surf (Input IN, inout SurfaceOutputStandard o)
+        void surf (Input IN, inout SurfaceOutput o)
         {
-            float3 weight = pow(abs(normalize(IN.worldNormal)), 5.0);
-            weight /= max(weight.x + weight.y + weight.z, .001);
-            float2 xy = IN.worldPos.xy * _TileScale;
-            float2 xz = IN.worldPos.xz * _TileScale;
-            float2 yz = IN.worldPos.zy * _TileScale;
-            fixed3 lightSurface = tex2D(_MainTex,yz).rgb * weight.x
-                + tex2D(_MainTex,xz).rgb * weight.y
-                + tex2D(_MainTex,xy).rgb * weight.z;
-            fixed3 darkSurface = tex2D(_DarkTex,yz).rgb * weight.x
-                + tex2D(_DarkTex,xz).rgb * weight.y
-                + tex2D(_DarkTex,xy).rgb * weight.z;
-            float world = smoothstep(.08, .92, saturate(_EchoWorldBlend));
-            o.Albedo = lerp(lightSurface * _Color.rgb,
-                darkSurface * _DarkColor.rgb, world);
-            // Glow is deliberately tiny: these are textured masonry and tiles,
-            // not bright neon slabs (portals retain their own shader).
-            o.Emission = darkSurface * float3(.14,.54,.48) * (_DarkGlow * world);
-            half fissure = saturate((darkSurface.r - darkSurface.g * 1.35) * 3.0);
-            o.Emission += world * fissure * float3(.30,.055,.11);
-            o.Metallic = 0;
-            o.Smoothness = _Glossiness;
+            // Masonry faces have a clear projection axis. Use a single sample
+            // in a stable world and blend two samples only during the shift.
+            float3 n = abs(IN.worldNormal);
+            float2 uv = (n.y >= max(n.x,n.z) ? IN.worldPos.xz :
+                         n.x >= n.z ? IN.worldPos.zy : IN.worldPos.xy) * _TileScale;
+            half world = smoothstep(.08, .92, saturate(_EchoWorldBlend));
+            fixed3 dark = 0;
+            [branch] if (world > 0) dark = tex2D(_DarkTex, uv).rgb;
+            fixed3 albedo = dark * _DarkColor.rgb;
+            [branch] if (world < 1)
+                albedo = lerp(tex2D(_MainTex, uv).rgb * _Color.rgb, albedo, world);
+            o.Albedo = albedo;
+            half fissure = saturate((dark.r - dark.g * 1.35) * 3.0);
+            o.Emission = world * (dark * float3(.14,.54,.48) * _DarkGlow +
+                fissure * float3(.30,.055,.11));
             o.Alpha = 1;
         }
         ENDCG

@@ -6,7 +6,7 @@ namespace EchoIslands
 {
     public static partial class DungeonCampaignBuilder
     {
-        const int MazeSize = 13;
+        const int MazeSize = 11;
         const float Cell = 8.4f;
         const float MazeHeight = 5.35f;
         static readonly Vector2Int[] MazeDirections =
@@ -25,7 +25,7 @@ namespace EchoIslands
 
         static MazePlan PlanMaze()
         {
-            var rng = new System.Random(2916);
+            var rng = new System.Random(83);
             var cells = new Stack<Vector2Int>();
             var parents = new Vector2Int[MazeSize,MazeSize];
             var depth = new int[MazeSize,MazeSize];
@@ -87,7 +87,7 @@ namespace EchoIslands
 
         static Vector3 MazeForward(Vector2Int direction) => new(direction.x,0f,direction.y);
 
-        static void BuildMaze(Transform root, out Transform spawn)
+        static void BuildMaze(Transform root, DungeonVisibility visibility, out Transform spawn)
         {
             MazePlan plan = PlanMaze();
             var routePositions = new Dictionary<Vector2Int,int>();
@@ -112,7 +112,7 @@ namespace EchoIslands
                     for (int d=0; d<4; d++)
                         if (plan.passages[x,z,d]) { degree++; entryDir = d; }
 
-                    bool trap = !mainRoute && degree == 1 && (x*7 + z*5)%5 == 1;
+                    bool trap = !mainRoute && degree == 1 && (x*7 + z*11)%5 == 1;
                     if (trap) MazeTrap(room,MazeForward(MazeDirections[entryDir]));
                     else Box(room,"Пол катакомб",new Vector3(0f,-.30f,0f),new Vector3(Cell+.02f,.60f,Cell+.02f),floor);
 
@@ -149,9 +149,7 @@ namespace EchoIslands
 
                     if (mainRoute && routeIndex>0 && routeIndex<plan.route.Count-1 && routeIndex%10==0)
                     {
-                        string[] wings = {"Крипта хранителей","Оружейные катакомбы","Склеп отражений","Внутреннее кольцо"};
-                        SavePad(room,Vector3.zero,routeIndex+1,wings[Mathf.Min(3,routeIndex*4/plan.route.Count)],
-                            "Закрытые решётки пропускают в другом мире.",
+                        SavePad(room,Vector3.zero,routeIndex+1,
                             MazeForward(plan.route[routeIndex+1]-cell), 6.4f);
                     }
 
@@ -177,11 +175,11 @@ namespace EchoIslands
                     {
                         var altar = Empty(room,"Последний алтарь",Vector3.zero);
                         altar.localRotation = Quaternion.LookRotation(-MazeForward(MazeDirections[entryDir]));
-                        SavePad(altar,new Vector3(0f,0f,-1.87f),plan.route.Count+1,
-                            "Алтарь хранителей","Сфера питает портал. Посох оставьте на пьедестале.");
+                        SavePad(altar,new Vector3(0f,0f,-1.87f),plan.route.Count+1);
                         PlacePortal(altar,new Vector3(-.78f,0f,2.40f),5,true);
                         Glow(altar,"Алтарная жаровня",new Vector3(0f,3.5f,1.9f),new Color(1f,.78f,.50f),3.5f,11f);
                     }
+                    visibility.Add(room, Vector3.zero, new Vector3(Cell, 0f, Cell));
                 }
             Glow(root,"Вход в лабиринт",CellCenter(start)+Vector3.up*3.3f,new Color(1f,.74f,.46f),3.9f,10.7f);
         }
@@ -201,26 +199,10 @@ namespace EchoIslands
             var collision = phased.gameObject.AddComponent<BoxCollider>();
             collision.center = new Vector3(0f,1.56f,0f);
             collision.size = new Vector3(opening+.13f,3.16f,.38f);
-            var blocker = phased.gameObject.AddComponent<WorldVariant>();
-            blocker.presence = presence;
-            blocker.useTransitionWave = false;
-            blocker.useSoftFade = true;
-            blocker.includeChildren = false;
-            blocker.colliderThreshold = .52f;
-            blocker.Refresh();
-
-            var model = Exhibit(door,secret?"Jail_Wall_broken":"Portcullis_Metal",new Vector3(0f,1.57f,0f),
+            var model = Exhibit(phased,secret?"Jail_Wall_broken":"Portcullis_Metal",new Vector3(0f,1.57f,0f),
                 new Vector3(opening,3.12f,.31f));
-            if (model != null)
-            {
-                var variant = model.AddComponent<WorldVariant>();
-                variant.presence = presence;
-                variant.affectColliders = false;
-                variant.useTransitionWave = false;
-                variant.scaleAnimMaxExtent = 0f;
-                variant.colliderThreshold = .52f;
-                variant.Refresh();
-            }
+            var visuals = model == null ? Array.Empty<Renderer>() : model.GetComponentsInChildren<Renderer>(true);
+            phased.gameObject.AddComponent<DungeonPhase>().Configure(presence, collision, visuals);
 
             Decoration(door,"Руна закрытого мира",new Vector3(0f,3.41f,0f),
                 new Vector3(.66f,.20f,.86f),presence==WorldPresence.Light?gold:cyan);

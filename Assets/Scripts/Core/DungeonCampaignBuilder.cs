@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -13,7 +12,8 @@ namespace EchoIslands
     {
         static Material stone, floor, metal, wood, platformTile, cyan, gold, lava, ice, darkTile, lightTile;
         static Mesh spikeMesh;
-        static readonly Dictionary<string, GameObject> props = new Dictionary<string, GameObject>();
+        static readonly Dictionary<string, GameObject> props = new();
+        static readonly Dictionary<string, Bounds> propBounds = new();
         static readonly Vector3[] Origins = {
             Vector3.zero, Vector3.zero, new Vector3(480f, 0f, 0f),
             new Vector3(1020f, 0f, 0f), new Vector3(1570f, 0f, 0f),
@@ -79,34 +79,42 @@ namespace EchoIslands
             go.transform.localScale = scale;
             var renderer = go.GetComponent<MeshRenderer>();
             if (renderer != null) renderer.sharedMaterial = mat;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             if (phase != WorldPresence.Both)
-            {
-                var variant = go.AddComponent<WorldVariant>();
-                variant.presence = phase;
-                variant.colliderThreshold = 0.24f;
-                variant.scaleAnimMaxExtent = 0f; // full-size collision geometry while material fades
-                variant.useSoftFade = true;
-                variant.useTransitionWave = false; // deterministic collider timing for precise jumps
-                variant.Refresh();
-            }
+                go.AddComponent<DungeonPhase>().Configure(phase, go.GetComponent<Collider>(), new Renderer[] {renderer});
             return go;
         }
 
-        static GameObject Prop(Transform root, string name, Vector3 localPos, Vector3 rotation, float scale = 1f)
+        static GameObject LoadProp(string name)
         {
-            if (!props.TryGetValue(name, out var prefab))
+            if (props.TryGetValue(name, out var prefab)) return prefab;
+            prefab = Resources.Load<GameObject>("EchoDungeon/" + name);
+            props.Add(name, prefab);
+            return prefab;
+        }
+
+        static Bounds MeasureProp(GameObject prefab)
+        {
+            Bounds model = new Bounds();
+            bool first = true;
+            foreach (var mesh in prefab.GetComponentsInChildren<MeshRenderer>(true))
             {
-                prefab = Resources.Load<GameObject>("EchoDungeon/" + name);
-                props[name] = prefab;
+                var filter = mesh.GetComponent<MeshFilter>();
+                var bounds = filter != null && filter.sharedMesh != null ? filter.sharedMesh.bounds : mesh.localBounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var sign = new Vector3((i&1)==0?-1:1,(i&2)==0?-1:1,(i&4)==0?-1:1);
+                    Vector3 corner = mesh.transform.TransformPoint(bounds.center + Vector3.Scale(bounds.extents,sign));
+                    Vector3 point = prefab.transform.InverseTransformPoint(corner);
+                    if (first)
+                    {
+                        model = new Bounds(point,Vector3.zero);
+                        first = false;
+                    }
+                    else model.Encapsulate(point);
+                }
             }
-            if (prefab == null) return null;
-            var go = UnityEngine.Object.Instantiate(prefab, root, false);
-            go.name = "Asset_" + name;
-            go.transform.localPosition = localPos;
-            go.transform.localRotation = Quaternion.Euler(rotation);
-            go.transform.localScale = Vector3.one * scale;
-            foreach (var c in go.GetComponentsInChildren<Collider>(true)) c.enabled = false;
-            return go;
+            return model;
         }
 
         static Transform Empty(Transform root, string name, Vector3 pos)
@@ -126,6 +134,7 @@ namespace EchoIslands
             l.intensity = strength;
             l.range = range;
             l.shadows = LightShadows.None;
+            l.renderMode = LightRenderMode.ForceVertex;
             lightRoot.gameObject.AddComponent<DungeonSconce>().Configure(l, tint, strength);
         }
 
@@ -200,25 +209,17 @@ namespace EchoIslands
 
         static GameObject Exhibit(Transform root, string modelName, Vector3 center, Vector3 size, float yaw = 0f, float lean = 0f)
         {
-            var go = Prop(root, modelName, center, new Vector3(0f,yaw,0f));
-            if (go == null) return null;
-            var meshes = go.GetComponentsInChildren<MeshRenderer>(true);
-            if (meshes.Length == 0) return go;
-            Bounds model = new Bounds();
-            bool first = true;
-            foreach (var mesh in meshes)
+            var prefab = LoadProp(modelName);
+            if (prefab == null) return null;
+            if (!propBounds.TryGetValue(modelName, out var model))
             {
-                var filter = mesh.GetComponent<MeshFilter>();
-                var bounds = filter != null && filter.sharedMesh != null ? filter.sharedMesh.bounds : mesh.localBounds;
-                for (int i=0;i<8;i++)
-                {
-                    var sign = new Vector3((i&1)==0?-1:1,(i&2)==0?-1:1,(i&4)==0?-1:1);
-                    Vector3 corner = mesh.transform.TransformPoint(bounds.center+Vector3.Scale(bounds.extents,sign));
-                    Vector3 point = go.transform.InverseTransformPoint(corner);
-                    if (first) { model = new Bounds(point,Vector3.zero); first=false; }
-                    else model.Encapsulate(point);
-                }
+                model = MeasureProp(prefab);
+                propBounds.Add(modelName, model);
             }
+            var go = UnityEngine.Object.Instantiate(prefab, root, false);
+            go.name = "Asset_" + modelName;
+            go.transform.localRotation = Quaternion.Euler(0f,yaw,0f);
+            foreach (var c in go.GetComponentsInChildren<Collider>(true)) c.enabled = false;
             Vector3 target = Mathf.Abs(Mathf.Sin(yaw * Mathf.Deg2Rad)) > .9f
                 ? new Vector3(size.z,size.y,size.x) : size;
             Vector3 local = model.size;
@@ -241,14 +242,7 @@ namespace EchoIslands
             Exhibit(dark,"Jail_Wall_broken",new Vector3(.25f,1.45f,0f),new Vector3(4.5f,2.8f,.5f),0f,-8f);
             Exhibit(dark,"Pillar",new Vector3(-1.9f,.8f,-.18f),new Vector3(.65f,1.65f,.65f),0f,13f);
             Exhibit(dark,"Plant_Root",new Vector3(1.3f,2.4f,-.24f),new Vector3(1.9f,2.5f,.37f),0f,-27f);
-            Exhibit(dark,"Dungeon_Custom_Border_Arched",new Vector3(.95f,1.6f,.10f),new Vector3(3.3f,3f,.44f),0f,-22f);
-            Exhibit(dark,"Skull",new Vector3(-1.1f,.22f,-.46f),new Vector3(.48f,.42f,.56f),25f);
-            var swap = bay.gameObject.AddComponent<DungeonRuin>();
-            swap.intact = light.gameObject;
-            swap.ruined = dark.gameObject;
-            bool cursed = WorldState.Instance != null && WorldState.Instance.Current == WorldKind.Dark;
-            light.gameObject.SetActive(!cursed);
-            dark.gameObject.SetActive(cursed);
+            bay.gameObject.AddComponent<DungeonRuin>().Configure(light.gameObject,dark.gameObject);
         }
 
         const float Width = 12f;
@@ -259,81 +253,70 @@ namespace EchoIslands
         readonly struct Room
         {
             public readonly Course course;
-            public readonly string title, hint;
+            public readonly string title;
             public readonly int turn;
-            public Room(Course course, string title, string hint, int turn = 0)
+            public Room(Course course, string title, int turn = 0)
             {
                 this.course = course;
                 this.title = title;
-                this.hint = hint;
                 this.turn = turn;
             }
         }
 
         static readonly Room[] Trials = {
-            new(Course.Banks,"Расколотая галерея","Тёмные плиты появляются после смены мира.", 90),
-            new(Course.Lifts,"Колёсный зал","Дождитесь, пока подъёмник подойдёт к краю."),
-            new(Course.Beams,"Мосты дозорных","На тонких балках отпускайте клавиши перед приземлением.", -90),
-            new(Course.Blades,"Зал маятников","Следите за концами вращающихся лезвий.", -90),
-            new(Course.Frost,"Зимний склеп","На льду заранее сбрасывайте скорость."),
-            new(Course.Forge,"Плавильня","Смените мир в прыжке, чтобы открыть следующий пролёт.", 90),
-            new(Course.Branch,"Зеркальная колоннада","Два пути вокруг колонн. У каждой стороны свои плиты.", 90),
-            new(Course.Collapse,"Обвальный архив","Камень дрожит перед падением. Не задерживайтесь под ним."),
-            new(Course.Lifts,"Цепная шахта","Ход подъёмников теперь идёт поперёк пролёта.", -90),
-            new(Course.Blades,"Оружейная стражи","У края лезвие проходит быстрее. Выбирайте момент.", -90),
-            new(Course.Frost,"Замёрзший водосброс","Здесь требуется смена мира на скользком ходу."),
-            new(Course.Beams,"Сломанный акведук","Узкие балки соединяют светлые и тёмные опоры.", 90),
-            new(Course.Forge,"Горнило","На опорах видны безопасные края между шипами.", 90),
-            new(Course.Collapse,"Падающий свод","Ищите проход сбоку от падающих плит."),
-            new(Course.Branch,"Разбитый бастион","Часть пути проходит за разрушенными решётками.", -90),
-            new(Course.Banks,"Последний пролёт","Последовательность опор меняется от света к тьме.", 90)
+            new(Course.Banks,"Расколотая галерея", 90),
+            new(Course.Lifts,"Колёсный зал"),
+            new(Course.Beams,"Мосты дозорных", -90),
+            new(Course.Blades,"Зал маятников", -90),
+            new(Course.Frost,"Зимний склеп"),
+            new(Course.Forge,"Плавильня", 90),
+            new(Course.Branch,"Зеркальная колоннада", 90),
+            new(Course.Collapse,"Обвальный архив"),
+            new(Course.Lifts,"Цепная шахта", -90),
+            new(Course.Blades,"Оружейная стражи", -90),
+            new(Course.Banks,"Последний пролёт", 90)
         };
 
         static readonly Room[] Temple = {
-            new(Course.Gravity,"Врата левой стены","Пройдите через светящийся барьер. Он перенесёт вас на стену.",90),
-            new(Course.Gravity,"Потолок хранителей","Гравитационные плиты срабатывают под ногами."),
-            new(Course.Gravity,"Обратная галерея","Переключите мир, чтобы запитать первую руну.",-90),
-            new(Course.Gravity,"Храм перевёрнутых арок","Следующая тропа начинается на грани, к которой ведёт руна.",-90),
-            new(Course.Gravity,"Висячие фонари","Цвет обода показывает, в каком мире действует печать."),
-            new(Course.Gravity,"Подвесная оружейная","Обойдите лезвие на стене, прежде чем наступить на плиту.",90),
-            new(Course.Gravity,"Склеп северной опоры","Сохраняйте направление вдоль зала после разворота.",90),
-            new(Course.Gravity,"Ледяной потолок","На обледеневшей грани тормозите заранее."),
-            new(Course.Gravity,"Арки отражения","Последовательно ищите путь на стене и потолке.",-90),
-            new(Course.Gravity,"Дозор над бездной","Пропустите лезвие на сменной опоре.",-90),
-            new(Course.Gravity,"Хранилище рун","Последняя плитка возвращает гравитацию на пол."),
-            new(Course.Gravity,"Святилище четырёх граней","Переключайте мир на нейтральных плитах.",90)
+            new(Course.Gravity,"Врата левой стены",90),
+            new(Course.Gravity,"Потолок хранителей"),
+            new(Course.Gravity,"Обратная галерея",-90),
+            new(Course.Gravity,"Храм перевёрнутых арок",-90),
+            new(Course.Gravity,"Висячие фонари"),
+            new(Course.Gravity,"Подвесная оружейная",90),
+            new(Course.Gravity,"Склеп северной опоры",90),
+            new(Course.Gravity,"Ледяной потолок"),
         };
 
         static readonly Room[] Countdown = {
-            new(Course.Banks,"Вестибюль хронометра","Возьмите часы. Нажмите Q перед тёмными опорами.",90),
-            new(Course.Beams,"Порог обратного хода","Ждите окончания импульса перед янтарной плитой."),
-            new(Course.Gravity,"Часовая стрелка","Q питает барьер. После поворота сразу идите по стене.",-90),
-            new(Course.Lifts,"Спуск противовесов","Запускайте часы, когда движущийся мост окажется рядом.",-90),
-            new(Course.Blades,"Ходовой механизм","Совместите импульс часов с безопасным проходом лезвий."),
-            new(Course.Forge,"Раскалённые минуты","Тёмная опора рассыплется, когда погаснут часы.",90),
-            new(Course.Gravity,"Стена обратного хода","Смените гравитацию в тёмном мире, пока идёт импульс.",90),
-            new(Course.Frost,"Замёрзшие секунды","На льду перед светлой опорой тормозите заранее."),
-            new(Course.Branch,"Развилка циферблата","Янтарный проход откроется, как только погаснет импульс.",-90),
-            new(Course.Collapse,"Осыпающийся ход","Запустите часы на безопасной площадке.",-90),
-            new(Course.Gravity,"Часовой свод","Часы открывают путь по граням. На серой опоре можно переждать."),
-            new(Course.Blades,"Удары маятника","Считайте время между взмахами лезвий.",90),
-            new(Course.Forge,"Сломанные часы","По обе стороны светлой площадки нужны отдельные импульсы."),
-            new(Course.Gravity,"Последний оборот","Доберитесь до сферы и откройте выход, пока идёт общий отсчёт.",90)
+            new(Course.Banks,"Вестибюль хронометра",90),
+            new(Course.Beams,"Порог обратного хода"),
+            new(Course.Gravity,"Часовая стрелка",-90),
+            new(Course.Lifts,"Спуск противовесов",-90),
+            new(Course.Blades,"Ходовой механизм"),
+            new(Course.Forge,"Раскалённые минуты",90),
+            new(Course.Gravity,"Стена обратного хода",90),
+            new(Course.Frost,"Замёрзшие секунды"),
+            new(Course.Beams,"Развилка циферблата",-90),
+            new(Course.Gravity,"Последний оборот",-90)
         };
 
-        public static GameObject Build(int number, out Transform spawn)
+        public static GameObject Build(int number, Transform player, out Transform spawn)
         {
             Materials();
             var root = new GameObject("Level_" + number + "_Dungeon");
             root.SetActive(false);
             root.transform.position = Origins[number];
-            if (number == 4) BuildMaze(root.transform, out spawn);
-            else BuildCourse(root.transform, number, out spawn);
+            var visibility = root.AddComponent<DungeonVisibility>();
+            visibility.Configure(player, number == 4 ? 25f : 31f);
+            if (number == 4) BuildMaze(root.transform, visibility, out spawn);
+            else BuildCourse(root.transform, visibility, number, out spawn);
+            visibility.Refresh(spawn.position);
             root.AddComponent<WorldSurfaceSkins>();
             return root;
         }
 
-        static void BuildCourse(Transform root, int level, out Transform spawn)
+        static void BuildCourse(Transform root, DungeonVisibility visibility, int level, out Transform spawn)
         {
             bool timed = level == 5;
             Room[] rooms = level == 2 ? Trials : timed ? Countdown : Temple;
@@ -353,15 +336,17 @@ namespace EchoIslands
                 Walkable(room, "Площадка у выхода", gravityRoom ? 52f : 45.3f, length);
                 if (index == 0) Wall(room,Vector3.back,0f,height,false);
                 if (timed && index == 0) PlaceClock(room);
-                SavePad(room, new Vector3(0f, 0f, 2.1f), index + 1, plan.title, plan.hint);
+                SavePad(room, new Vector3(0f, 0f, 2.1f), index + 1);
 
                 if (gravityRoom) BuildGravity(room, index, timed);
                 else BuildParkour(room, plan.course, index, timed);
+                visibility.Add(room, Vector3.forward * (length*.5f), new Vector3(Width, 0f, length));
 
                 Vector3 direction = room.localRotation * Vector3.forward;
                 Vector3 nextDirection = Quaternion.Euler(0f, heading + plan.turn, 0f) * Vector3.forward;
                 Vector3 end = entry + direction * length;
-                Connector(root, end + direction * 6f, -direction, nextDirection, index);
+                var connector = Connector(root, end + direction * 6f, -direction, nextDirection, index);
+                visibility.Add(connector, Vector3.zero, new Vector3(Width, 0f, Width));
                 entry = end + (direction + nextDirection) * 6f;
                 heading += plan.turn;
             }
@@ -371,15 +356,15 @@ namespace EchoIslands
             Shell(finale, 22f, 7.6f, false, rooms.Length);
             Wall(finale, Vector3.forward, 22f, 7.6f, false);
             Walkable(finale, "Пол святилища", 0f, 22f);
-            SavePad(finale, new Vector3(0f,0f,2f), rooms.Length + 1, "Святилище портала",
-                timed ? "Q — проявить сферу. Затем отнесите её к порталу." : "Проявите сферу в тёмном мире и отнесите к порталу.");
+            SavePad(finale, new Vector3(0f,0f,2f), rooms.Length + 1);
             PlaceOrb(finale, new Vector3(-2.35f,1.52f,9f));
             PlacePortal(finale, new Vector3(0f,0f,17.5f), level + 1);
             Exhibit(finale, "Banner", new Vector3(4.8f,3.5f,16f), new Vector3(.3f,2.7f,1.4f), 90f);
             Exhibit(finale, "Cauldron_Full", new Vector3(3.8f,.7f,8f), new Vector3(1.45f,1.4f,1.45f));
+            visibility.Add(finale, Vector3.forward * 11f, new Vector3(Width, 0f, 22f));
         }
 
-        static void Connector(Transform root, Vector3 center, Vector3 incoming, Vector3 outgoing, int index)
+        static Transform Connector(Transform root, Vector3 center, Vector3 incoming, Vector3 outgoing, int index)
         {
             var hall = Empty(root,"Поворот между залами",center);
             Box(hall,"Плиты коридора",new Vector3(0f,-.32f,0f),new Vector3(12.04f,.64f,12.04f),floor);
@@ -388,7 +373,8 @@ namespace EchoIslands
                 Wall(hall, face, 6f, 4.5f, Vector3.Dot(face,incoming) > .99f || Vector3.Dot(face,outgoing) > .99f, .65f);
             Vector3 decor = -(incoming + outgoing) * 2.5f;
             Exhibit(hall, index % 2 == 0 ? "Pillar" : "Chandelier", decor + Vector3.up * 3.05f, new Vector3(1.4f,1.5f,1.4f));
-            Glow(hall,"Свет на повороте",decor + Vector3.up * 2.7f,new Color(1f,.67f,.35f),2.2f,11f);
+            Glow(hall,"Свет на повороте",decor + Vector3.up * 2.7f,new Color(1f,.67f,.35f),2.2f,9f);
+            return hall;
         }
 
         static void Wall(Transform root, Vector3 direction, float distance, float height, bool opening, float thickness = .64f)
@@ -423,14 +409,15 @@ namespace EchoIslands
             {
                 Box(root,"Опорная кладка",new Vector3(sign*Width*.5f,(height-depth)*.5f,length*.5f),
                     new Vector3(.58f,height+depth,length+.10f),stone);
-                for (int bay = 0; bay < (length > 30f ? 4 : 2); bay++)
+                for (int bay = 0; bay < (length > 30f ? 2 : 1); bay++)
                 {
-                    float z = 4f + bay * (length-8f)/(length > 30f ? 3f : 1f);
+                    float z = length * (.27f + bay * .46f);
                     Alcove(root,new Vector3(sign*5.55f,-.02f,z),sign*90f,seed+bay);
                     Exhibit(root,"Pillar",new Vector3(sign*5.55f,height*.5f,z+2.6f),
                         new Vector3(.72f,height,.72f));
                     Exhibit(root,"Torch_Wall",new Vector3(sign*5.18f,2.6f,z),new Vector3(.38f,.82f,.52f),sign*90f);
-                    Glow(root,"Факел",new Vector3(sign*4.7f,2.85f,z),new Color(1f,.68f,.40f),2.65f,12f);
+                    if (sign == (bay == 0 ? -1 : 1))
+                        Glow(root,"Факел",new Vector3(sign*4.7f,2.85f,z),new Color(1f,.68f,.40f),2.65f,12f);
                     if (bay % 2 == 0)
                         Exhibit(root,seed%3==0?"Jail_Wall":"Dungeon_Wall_Window",
                             new Vector3(sign*5.64f,height-2f,z+2f),new Vector3(.36f,2.35f,3.45f),sign*90f);
@@ -452,7 +439,7 @@ namespace EchoIslands
             }
         }
 
-        static void SavePad(Transform floorSpace, Vector3 spot, int id, string title, string hint, Vector3? heading = null, float triggerWidth = 11.25f)
+        static void SavePad(Transform floorSpace, Vector3 spot, int id, Vector3? heading = null, float triggerWidth = 11.25f)
         {
             var zone = Empty(floorSpace,"Контрольная точка " + id,spot);
             if (heading.HasValue) zone.localRotation = Quaternion.LookRotation(heading.Value);
@@ -465,8 +452,6 @@ namespace EchoIslands
             var save = zone.gameObject.AddComponent<CheckpointTrigger>();
             save.checkpoint = Empty(zone,"Позиция возрождения",new Vector3(0f,.12f,.12f));
             save.id = id;
-            save.roomTitle = title;
-            save.roomHint = hint;
             Decoration(zone,"Бронзовая метка",new Vector3(0f,.014f,0f),new Vector3(2.7f,.027f,.95f),gold);
             Decoration(zone,"Светящаяся руна",new Vector3(0f,.038f,0f),new Vector3(1.8f,.025f,.12f),cyan);
         }

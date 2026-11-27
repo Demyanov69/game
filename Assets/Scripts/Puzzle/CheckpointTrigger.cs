@@ -6,7 +6,7 @@ namespace EchoIslands
     {
         public Transform checkpoint;
         public int id;
-        public string roomTitle, roomHint;
+        public string hint;
         bool activated;
 
         void OnTriggerEnter(Collider other)

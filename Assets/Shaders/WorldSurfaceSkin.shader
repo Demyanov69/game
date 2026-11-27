@@ -15,7 +15,7 @@ Shader "Echo/WorldSurfaceSkin"
         Tags { "RenderType"="Opaque" "Queue"="Geometry" }
         LOD 220
         CGPROGRAM
-        #pragma surface surf Standard fullforwardshadows
+        #pragma surface surf Lambert noforwardadd nolightmap noshadow
         #pragma target 3.0
         #include "UnityCG.cginc"
         sampler2D _MainTex;
@@ -29,28 +29,22 @@ Shader "Echo/WorldSurfaceSkin"
             float3 worldPos;
             float3 worldNormal;
         };
-        void surf (Input IN, inout SurfaceOutputStandard o)
+        void surf (Input IN, inout SurfaceOutput o)
         {
             fixed3 original = tex2D(_MainTex, IN.uv_MainTex).rgb * _Color.rgb;
-            // Retain original atlas UVs. Project additional wear in WORLD-space,
-            // so dark-world materials have a genuinely different surface texture,
-            // not just the same image with lowered brightness.
-            float3 w = pow(abs(normalize(IN.worldNormal)), 6.0);
-            w /= max(0.001, w.x + w.y + w.z);
-            float s = _DarkTileScale;
-            fixed3 erosion = tex2D(_DarkTex, IN.worldPos.zy*s).rgb*w.x
-                + tex2D(_DarkTex, IN.worldPos.xz*s).rgb*w.y
-                + tex2D(_DarkTex, IN.worldPos.xy*s).rgb*w.z;
-            float luminance = dot(original, float3(.22,.67,.11));
-            float3 faded = float3(luminance, luminance, luminance);
-            // Keep silhouettes/UV art readable, but visibly age and stain it.
-            fixed3 shadowOriginal = lerp(original, faded, .38) * _DarkTint.rgb;
-            fixed3 night = lerp(shadowOriginal, erosion * _DarkTint.rgb,
-                saturate(_DarkMix));
-            float t = smoothstep(.04, .96, saturate(_EchoWorldBlend));
-            o.Albedo = lerp(original, night, t);
-            o.Metallic = 0;
-            o.Smoothness = _Glossiness;
+            half world = smoothstep(.04, .96, saturate(_EchoWorldBlend));
+            o.Albedo = original;
+            [branch] if (world > 0)
+            {
+                float3 n = abs(IN.worldNormal);
+                float2 uv = (n.y >= max(n.x,n.z) ? IN.worldPos.xz :
+                             n.x >= n.z ? IN.worldPos.zy : IN.worldPos.xy) * _DarkTileScale;
+                fixed3 wear = tex2D(_DarkTex, uv).rgb;
+                half luminance = dot(original, float3(.22,.67,.11));
+                fixed3 shadow = lerp(original, luminance.xxx, .38);
+                fixed3 night = lerp(shadow, wear, saturate(_DarkMix)) * _DarkTint.rgb;
+                o.Albedo = lerp(original, night, world);
+            }
             o.Alpha = 1;
         }
         ENDCG

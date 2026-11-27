@@ -11,12 +11,16 @@ namespace EchoIslands
         public Transform[] spawns;
         public int current = 1;
 
-        public const float FinalTime = 600f;
+        public const float FinalTime = 390f;
         public FirstPersonController Controller { get; private set; }
         public bool HasBegun { get; private set; }
         public float Level5Remaining { get; private set; } = FinalTime;
         CheckpointTrigger checkpoint;
         GameObject generatedDungeon;
+        DungeonVisibility visibility;
+        PortalFrame levelPortal;
+        Orb levelOrb;
+        Camera playCamera;
         GameHUD hud;
         float lastDeath = -10f;
         bool finished;
@@ -29,6 +33,7 @@ namespace EchoIslands
         void Awake()
         {
             Instance = this;
+            Application.targetFrameRate = 60;
             if (levelRoots == null || levelRoots.Length < 5) System.Array.Resize(ref levelRoots,5);
             if (spawns == null || spawns.Length < 5) System.Array.Resize(ref spawns,5);
             Controller = player != null ? player.GetComponent<FirstPersonController>() : null;
@@ -38,6 +43,13 @@ namespace EchoIslands
         void Start()
         {
             hud = FindAnyObjectByType<GameHUD>();
+            playCamera = Camera.main;
+            if (playCamera != null)
+            {
+                playCamera.allowHDR = false;
+                playCamera.allowMSAA = false;
+                playCamera.farClipPlane = 115f;
+            }
             for (int i=1; i<levelRoots.Length; i++)
                 if (levelRoots[i] != null) levelRoots[i].SetActive(false);
         }
@@ -60,6 +72,7 @@ namespace EchoIslands
             if (cc != null) cc.enabled = false;
             player.SetPositionAndRotation(position,rotation);
             if (Controller != null) Controller.ResetGravity();
+            if (visibility != null) visibility.Refresh(position);
             if (cc != null) cc.enabled = true;
         }
 
@@ -84,24 +97,19 @@ namespace EchoIslands
                 (checkpoint != null && checkpoint.id >= next.id)) return;
             checkpoint = next;
             SaveCurrent();
-            if (hud != null) hud.ShowRoom(next.roomTitle,next.roomHint);
+            if (hud != null && !string.IsNullOrEmpty(next.hint)) hud.Notify(next.hint,3.8f);
         }
 
         public void SaveCurrent()
         {
             if (!HasBegun || player == null || finished) return;
             Transform anchor = checkpoint != null ? checkpoint.checkpoint : spawns[current-1];
-            var root = levelRoots[current-1];
-            var portal = root != null ? root.GetComponentInChildren<PortalFrame>() : null;
-            var orbs = FindObjectsByType<Orb>(FindObjectsSortMode.None);
-            bool carriedOrb = false;
-            foreach (var orb in orbs)
-                if (orb.carried) { carriedOrb = true; break; }
+            bool carriedOrb = levelOrb != null && levelOrb.carried;
             GameProgress.Save(current,anchor != null ? anchor.position : player.position,
                 tools != null && tools.staff,tools != null && tools.clock,
                 current != 5 && WorldState.Instance != null ? WorldState.Instance.Target : WorldKind.Light,
-                carriedOrb || (portal != null && portal.IsAbsorbing),Level5Remaining,checkpoint != null ? checkpoint.id : 0,
-                portal != null && portal.HasOrb,portal != null && portal.HasStaff);
+                carriedOrb || (levelPortal != null && levelPortal.IsAbsorbing),Level5Remaining,checkpoint != null ? checkpoint.id : 0,
+                levelPortal != null && levelPortal.HasOrb,levelPortal != null && levelPortal.HasStaff);
         }
 
         public void Begin(int level, bool restore = false)
@@ -111,6 +119,7 @@ namespace EchoIslands
                 generatedDungeon.SetActive(false);
                 Destroy(generatedDungeon);
                 generatedDungeon = null;
+                visibility = null;
             }
             foreach (var orb in FindObjectsByType<Orb>(FindObjectsInactive.Include,FindObjectsSortMode.None))
                 if (orb != null && orb.carried)
@@ -120,6 +129,8 @@ namespace EchoIslands
                 }
 
             current = Mathf.Clamp(level,1,5);
+            if (Controller != null) Controller.SetDungeonMovement(current > 1);
+            if (playCamera != null) playCamera.farClipPlane = current == 1 ? 115f : current == 4 ? 26f : 35f;
             HasBegun = true;
             finished = false;
             checkpoint = null;
@@ -136,13 +147,17 @@ namespace EchoIslands
 
             if (current > 1)
             {
-                generatedDungeon = DungeonCampaignBuilder.Build(current,out var spawn);
+                generatedDungeon = DungeonCampaignBuilder.Build(current,player,out var spawn);
+                visibility = generatedDungeon.GetComponent<DungeonVisibility>();
                 levelRoots[current-1] = generatedDungeon;
                 spawns[current-1] = spawn;
             }
 
             for (int i=0; i<levelRoots.Length; i++)
                 if (levelRoots[i] != null) levelRoots[i].SetActive(i == current-1);
+            var root = levelRoots[current-1];
+            levelPortal = root != null ? root.GetComponentInChildren<PortalFrame>(true) : null;
+            levelOrb = root != null ? root.GetComponentInChildren<Orb>(true) : null;
             MovePlayer(spawns[current-1]);
 
             if (tools != null && current >= 2 && current <= 4) tools.Give(ToolKind.Staff);
@@ -158,9 +173,9 @@ namespace EchoIslands
 
         void Restore()
         {
-            // Old dungeon layouts used a single corridor and their coordinates cannot
-            // identify a safe spot in the new rooms. Keep the chapter and its unlocks.
-            if (!GameProgress.HasCheckpointFormat && current > 1)
+            // Checkpoints from earlier floor plans no longer map to safe landings.
+            // The saved chapter and campaign unlocks still apply.
+            if (current > 1 && !GameProgress.HasCurrentDungeonLayout)
             {
                 SaveCurrent();
                 return;
@@ -170,12 +185,11 @@ namespace EchoIslands
             if (root == null) return;
             if (GameProgress.SavedCheckpoint > 0)
             {
-                foreach (var candidate in root.GetComponentsInChildren<CheckpointTrigger>())
+                foreach (var candidate in root.GetComponentsInChildren<CheckpointTrigger>(true))
                     if (candidate.id == GameProgress.SavedCheckpoint)
                     {
                         checkpoint = candidate;
                         MovePlayer(candidate.checkpoint);
-                        if (hud != null) hud.ShowRoom(candidate.roomTitle,candidate.roomHint);
                         break;
                     }
             }
@@ -186,18 +200,20 @@ namespace EchoIslands
             {
                 if (current != 5 && GameProgress.SavedStaff && !tools.staff) tools.Give(ToolKind.Staff);
                 if (current == 5 && GameProgress.SavedClock) tools.Give(ToolKind.Clock);
-                foreach (var pickup in root.GetComponentsInChildren<ToolPickup>())
+                foreach (var pickup in root.GetComponentsInChildren<ToolPickup>(true))
                     if (pickup.kind == ToolKind.Staff && tools.staff || pickup.kind == ToolKind.Clock && tools.clock)
                         pickup.gameObject.SetActive(false);
             }
 
             if (current == 5) Level5Remaining = Mathf.Clamp(GameProgress.SavedLevel5Time,1f,FinalTime);
-            var portal = root.GetComponentInChildren<PortalFrame>();
-            var orb = root.GetComponentInChildren<Orb>();
-            if (portal != null) portal.RestoreRequirements(GameProgress.SavedDepositedOrb,GameProgress.SavedDepositedStaff);
-            if (orb != null && GameProgress.SavedDepositedOrb) orb.gameObject.SetActive(false);
-            else if (orb != null && GameProgress.SavedOrb && Camera.main != null)
-                orb.Pick(Camera.main.transform);
+            if (levelPortal != null)
+                levelPortal.RestoreRequirements(GameProgress.SavedDepositedOrb,GameProgress.SavedDepositedStaff);
+            if (levelOrb != null && GameProgress.SavedDepositedOrb) levelOrb.gameObject.SetActive(false);
+            else if (levelOrb != null && GameProgress.SavedOrb && playCamera != null)
+            {
+                if (!levelOrb.gameObject.activeInHierarchy) levelOrb.transform.SetParent(playCamera.transform,true);
+                levelOrb.Pick(playCamera.transform);
+            }
 
             if (WorldState.Instance != null)
                 WorldState.Instance.SnapTo(current == 5 || GameProgress.SavedDepositedStaff ? WorldKind.Light : GameProgress.SavedWorld);

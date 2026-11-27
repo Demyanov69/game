@@ -74,21 +74,28 @@ namespace EchoIslands
                 WorldPresence phase = TrialPhase(index,i,timed);
                 bool slippery = course == Course.Frost && i > 0 && i < 10 && i != 6;
                 float y = course == Course.Banks && i > 0 && i < 10 ? .24f * (i % 3) : 0f;
-                float w = course == Course.Beams ? 1.22f : course == Course.Blades || course == Course.Collapse ? 4.70f : 2.64f;
-                float depth = course == Course.Beams || slippery ? 3.38f : 2.85f;
-                if (course == Course.Branch) w = 3.5f;
+                float w = course switch
+                {
+                    Course.Beams => .58f,
+                    Course.Blades or Course.Collapse => 4.55f,
+                    Course.Branch => 2.9f,
+                    _ => 2.18f
+                };
+                bool moving = course == Course.Lifts && (i == 2 || i == 4 || i == 7 || i == 9);
+                bool hasBlade = course == Course.Blades && (i == 1 || i == 5 || i == 7);
+                float depth = hasBlade ? 1.94f : moving ? 1.62f : course == Course.Beams ? 1.25f : 1.43f;
                 var stage = Deck(room,"Опора над бездной",new Vector3(x,y,z),new Vector3(w,.43f,depth),
                     phase,slippery?ice:course==Course.Beams?wood:platformTile,Quaternion.identity);
                 if (slippery) AddIce(stage);
-                if (course == Course.Lifts && (i == 2 || i == 4 || i == 7 || i == 9))
+                if (moving)
                 {
                     var mover = stage.AddComponent<MovingDungeonPlatform>();
                     mover.travel = index%3 == 1 && i%2 == 0 ? room.up * .36f : room.right * (i%2==0?1.6f:1.05f);
                     mover.period = 3.8f + i%3 * .55f;
                     Exhibit(room,"Pillar",new Vector3(x,-2.05f,z),new Vector3(.62f,2.6f,.62f));
                 }
-                if (course == Course.Blades && (i == 1 || i == 5 || i == 7))
-                    Blade(room,new Vector3(x,.69f,z), Quaternion.identity, 3.4f, 65f + index%6*12f);
+                if (hasBlade)
+                    Blade(room,new Vector3(x,.69f,z), Quaternion.identity, 2.75f, 72f + index%6*12f);
                 if (course == Course.Collapse && (i == 2 || i == 5 || i == 7 || i == 8))
                     FallingBlock(room,new Vector3(x + mirror*.65f,5.6f,z));
                 if (course == Course.Forge && (i == 1 || i == 5 || i == 7 || i == 10))
@@ -100,9 +107,9 @@ namespace EchoIslands
                 {
                     // A short side route rejoins the next common landing.
                     WorldPresence side = phase == WorldPresence.Dark ? WorldPresence.Light : WorldPresence.Dark;
-                    float sideX = ((i == 5 ? -1f : 1f)*3.12f)*mirror;
+                    float sideX = ((i == 5 ? -1f : 1f)*2.40f)*mirror;
                     if (!timed || i == 5)
-                        Deck(room,"Боковая галерея",new Vector3(sideX,y,z),new Vector3(2.55f,.43f,3.08f),
+                        Deck(room,"Боковая галерея",new Vector3(sideX,y,z),new Vector3(2.15f,.43f,1.6f),
                             side,wood,Quaternion.identity);
                     Exhibit(room,"Pillar",new Vector3(sideX*1.48f,2.57f,z),new Vector3(.66f,5.15f,.66f));
                 }
@@ -173,10 +180,13 @@ namespace EchoIslands
                 bool icy = (index%5 == 2 || index%5 == 3) && i > 2 && i < 8;
                 WorldPresence phase = WorldPresence.Both;
                 if (i == 3 || i == 4 || i == 8) phase = WorldPresence.Dark;
-                if (i == 5 && !timed || i == 7 || i == 10 && !timed) phase = WorldPresence.Light;
+                if ((!timed && (i == 5 || i == 10)) || i == 7) phase = WorldPresence.Light;
                 float offset = i == 3 || i == 8 ? .54f : i == 4 || i == 7 ? -.54f : 0f;
                 Vector3 surface = FacePoint(side,z) + face * Vector3.right * offset;
-                var step = Deck(room,"Плита на грани",surface,new Vector3(3.08f,.45f,2.85f),phase,
+                bool isSeal = i == 2 || i == 9 || (i == 6 && first != second);
+                float width = isSeal ? 2.85f : i > 3 && index % 3 == 1 ? 1.35f : 2.15f;
+                float depth = isSeal ? 2.45f : icy ? 1.55f : 1.43f;
+                var step = Deck(room,"Плита на грани",surface,new Vector3(width,.45f,depth),phase,
                     icy ? ice : platformTile,face);
                 if (icy) AddIce(step);
                 if (i == 5 && index%4 == 1)
@@ -191,7 +201,7 @@ namespace EchoIslands
                 if (next == side) continue;
 
                 var targetFace = Quaternion.LookRotation(Vector3.forward,FaceUp(next));
-                Deck(room,"Приёмная плита",FacePoint(next,z),new Vector3(3.74f,.45f,2.95f),
+                Deck(room,"Приёмная плита",FacePoint(next,z),new Vector3(2.85f,.45f,2.45f),
                     WorldPresence.Both,floor,targetFace);
                 bool needsWorld = i == 2 || (i == 6 && !timed && index%2==1);
                 WorldKind world = i == 6 ? WorldKind.Light : WorldKind.Dark;

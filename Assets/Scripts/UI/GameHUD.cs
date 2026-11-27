@@ -8,9 +8,10 @@ namespace EchoIslands
         public ToolController tools;
 
         int level = 1;
-        string notice, room, roomHint;
-        float noticeUntil, roomUntil;
-        GUIStyle heading, small, centered, timer;
+        string notice, focus, timerText, clockText;
+        float noticeUntil, nextFocus;
+        int shownSeconds = -1, shownPulse = int.MinValue;
+        GUIStyle small, centered, timer;
 
         static readonly Color Warm = new(.99f,.76f,.46f);
         static readonly Color Cold = new(.39f,.95f,.86f);
@@ -19,15 +20,9 @@ namespace EchoIslands
         public void SetLevel(int value)
         {
             level = Mathf.Clamp(value,1,5);
-            room = roomHint = notice = null;
-            roomUntil = noticeUntil = 0f;
-        }
-
-        public void ShowRoom(string title, string hint)
-        {
-            room = title;
-            roomHint = hint;
-            roomUntil = Time.unscaledTime + 6f;
+            focus = notice = null;
+            noticeUntil = nextFocus = 0f;
+            if (level == 2) Notify("Удерживайте пробел для дальнего прыжка.", 3.3f);
         }
 
         public void Notify(string message, float seconds = 2.4f)
@@ -43,11 +38,10 @@ namespace EchoIslands
 
         void Styles()
         {
-            if (heading != null) return;
-            heading = Style(18,FontStyle.Bold,TextAnchor.MiddleLeft);
-            small = Style(13,FontStyle.Normal,TextAnchor.MiddleLeft);
+            if (centered != null) return;
+            small = Style(13,FontStyle.Normal,TextAnchor.MiddleCenter);
             centered = Style(15,FontStyle.Bold,TextAnchor.MiddleCenter);
-            timer = Style(28,FontStyle.Bold,TextAnchor.MiddleLeft);
+            timer = Style(26,FontStyle.Bold,TextAnchor.MiddleCenter);
         }
 
         static GUIStyle Style(int size, FontStyle weight, TextAnchor anchor)
@@ -110,58 +104,54 @@ namespace EchoIslands
             return null;
         }
 
-        string Objective()
+        void Update()
         {
-            if (Time.unscaledTime < roomUntil && !string.IsNullOrEmpty(roomHint)) return roomHint;
-            return level switch
+            if (menu != null && menu.IsOpen) return;
+            if (Time.unscaledTime < nextFocus) return;
+            nextFocus = Time.unscaledTime + .075f;
+            focus = LookHint();
+        }
+
+        void DrawClock(float width, Color accent)
+        {
+            var flow = LevelFlow.Instance;
+            if (flow == null) return;
+            int left = Mathf.CeilToInt(flow.Level5Remaining);
+            if (left != shownSeconds)
             {
-                1 => tools != null && !tools.staff ? "Идите по тропе к реке. E — взять парящий посох." :
-                     "ЛКМ — сменить мир. За рекой найдите сферу и портал.",
-                2 => "ЛКМ — сменить мир. Найдите сферу в последнем зале.",
-                3 => "ЛКМ — сменить мир. Печати меняют гравитацию при проходе.",
-                4 => "ЛКМ — сменить мир. Ищите сферу, алтарь и портал.",
-                5 => tools != null && !tools.clock ? "Возьмите часы на пьедестале перед первым пролётом." :
-                     "Q — короткий переход. Откройте портал до конца отсчёта.",
-                _ => ""
-            };
+                shownSeconds = left;
+                timerText = $"{left/60:00}:{left%60:00}";
+            }
+
+            float x = (width-148f)*.5f;
+            bool hasClock = tools != null && tools.clock;
+            float pulse = hasClock ? tools.ClockRemaining : 0f;
+            Panel(new Rect(x,16f,148f,hasClock ? 69f : 43f),left <= 30 ? new Color(1f,.36f,.26f) : accent);
+            GUI.Label(new Rect(x,18f,148f,38f),timerText,timer);
+            if (!hasClock) return;
+
+            int tick = pulse > 0f ? Mathf.CeilToInt(pulse*10f) : tools.ClockCooldown > 0f ? -1 : 0;
+            if (tick != shownPulse)
+            {
+                shownPulse = tick;
+                clockText = tick > 0 ? $"{tick/10f:0.0} с" : tick == -1 ? "Пауза часов" : "Q — часы";
+            }
+            GUI.Label(new Rect(x,56f,148f,21f),clockText,small);
+            if (pulse > 0f)
+                Fill(new Rect(x+8f,79f,132f * Mathf.Clamp01(pulse/tools.clockDuration),3f),Cold);
         }
 
         void OnGUI()
         {
-            if (menu != null && menu.IsOpen) return;
+            if ((menu != null && menu.IsOpen) || Event.current.type != EventType.Repaint) return;
             Styles();
             float sw = Screen.width, sh = Screen.height;
             bool dark = WorldState.Instance != null && WorldState.Instance.Current == WorldKind.Dark;
             Color accent = dark ? Cold : Warm;
-            float panelWidth = Mathf.Min(370f,sw * .61f);
-            Panel(new Rect(18f,18f,panelWidth,102f),accent);
-            GUI.Label(new Rect(30f,25f,panelWidth-24f,27f),LevelFlow.LevelNames[level],heading);
-            string state = (dark ? "Тёмный мир" : "Светлый мир") + (string.IsNullOrEmpty(room) ? "" : "   ·   " + room);
-            GUI.Label(new Rect(30f,51f,panelWidth-24f,22f),state,small);
-            GUI.Label(new Rect(30f,72f,panelWidth-24f,40f),Objective(),small);
-            GUI.Label(new Rect(18f,sh-33f,270f,21f),"WASD — движение    Пробел — прыжок    Esc — меню",small);
-
-            if (level == 5 && LevelFlow.Instance != null)
-            {
-                int left = Mathf.CeilToInt(LevelFlow.Instance.Level5Remaining);
-                float right = sw - 196f;
-                Color clockAccent = left <= 60 ? new Color(1f,.36f,.26f) : accent;
-                Panel(new Rect(right,18f,178f,83f),clockAccent);
-                GUI.Label(new Rect(right+12f,21f,146f,40f),$"{left/60:00}:{left%60:00}",timer);
-                if (tools != null && tools.clock)
-                {
-                    string label = tools.ClockRemaining > 0f ? $"Импульс  {tools.ClockRemaining:0.0} с" :
-                        tools.ClockCooldown > 0f ? "Часы заряжаются" : "Q — запустить часы";
-                    GUI.Label(new Rect(right+12f,58f,154f,24f),label,small);
-                    Fill(new Rect(right+12f,87f,154f,3f),new Color(.21f,.27f,.27f));
-                    if (tools.ClockRemaining > 0f)
-                        Fill(new Rect(right+12f,87f,154f * Mathf.Clamp01(tools.ClockRemaining/tools.clockDuration),3f),Cold);
-                }
-            }
+            if (level == 5) DrawClock(sw,accent);
 
             Fill(new Rect(sw*.5f-2f,sh*.5f-2f,4f,4f),new Color(0f,0f,0f,.85f));
             Fill(new Rect(sw*.5f-1f,sh*.5f-1f,2f,2f),accent);
-            string focus = LookHint();
             if (!string.IsNullOrEmpty(focus))
             {
                 float width = Mathf.Min(380f,sw-36f);

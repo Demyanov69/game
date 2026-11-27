@@ -169,8 +169,7 @@ namespace EchoIslands
             var trigger = point.AddComponent<CheckpointTrigger>();
             trigger.checkpoint = respawn;
             trigger.id = id;
-            trigger.roomTitle = title;
-            trigger.roomHint = hint;
+            trigger.hint = hint;
 
             // Visual marker - textured bronze/iron disk, non-blocking for walking.
             var marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);

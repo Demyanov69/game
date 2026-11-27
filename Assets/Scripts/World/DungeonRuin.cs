@@ -6,6 +6,13 @@ namespace EchoIslands
     {
         public GameObject intact, ruined;
         WorldState state;
+        public void Configure(GameObject daylight, GameObject night)
+        {
+            intact = daylight;
+            ruined = night;
+            SetWorld(WorldState.Instance != null ? WorldState.Instance.Current : WorldKind.Light);
+        }
+
         void OnEnable()
         {
             state = WorldState.Instance;

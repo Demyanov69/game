@@ -66,6 +66,7 @@ namespace EchoIslands
             EchoVisualOverhaul.ReskinPortal(this);
             if (activationVFX != null) activationVFX.SetPortalState(false);
             SetVisuals(false);
+            ApplyRestoredRequirements();
         }
 
         void CreateEnterTrigger()
@@ -124,6 +125,11 @@ namespace EchoIslands
         {
             filled = orb ? requiredOrbs : 0;
             HasStaff = staff && requiresStaff && orb;
+            if (enterTrigger != null) ApplyRestoredRequirements();
+        }
+
+        void ApplyRestoredRequirements()
+        {
             if (HasStaff)
             {
                 var pedestal = GetComponentInChildren<StaffPedestal>();
