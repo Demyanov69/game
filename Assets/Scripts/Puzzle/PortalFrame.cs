@@ -13,8 +13,13 @@ namespace EchoIslands
         public PortalActivationVFX activationVFX;
         public bool completeOnEnter = true;
 
+        public bool requiresStaff;
+        public bool HasOrb => filled >= requiredOrbs;
+        public bool HasStaff { get; private set; }
+        public bool IsAbsorbing { get; private set; }
         int filled;
         bool activated;
+        float enterAfter;
         public bool IsActivated => activated;
         BoxCollider enterTrigger;
         Transform centralAbsorptionPoint;
@@ -50,6 +55,13 @@ namespace EchoIslands
             if (activationVFX == null)
                 activationVFX = gameObject.AddComponent<PortalActivationVFX>();
             GetAbsorptionPoint();
+            if (GetComponent<Collider>() == null)
+            {
+                var interaction = gameObject.AddComponent<BoxCollider>();
+                interaction.isTrigger = true;
+                interaction.center = new Vector3(0f,1.62f,-.06f);
+                interaction.size = new Vector3(2.75f,3.18f,.50f);
+            }
             CreateEnterTrigger();
             EchoVisualOverhaul.ReskinPortal(this);
             if (activationVFX != null) activationVFX.SetPortalState(false);
@@ -70,7 +82,15 @@ namespace EchoIslands
                 go.transform.localPosition = new Vector3(0f, 1.6f, 0f);
                 enterTrigger = go.AddComponent<BoxCollider>();
             }
+            if (enterTrigger == null) enterTrigger = existing.gameObject.AddComponent<BoxCollider>();
             enterTrigger.isTrigger = true;
+            enterTrigger.gameObject.layer = 2;
+            if (enterTrigger.attachedRigidbody == null)
+            {
+                var body = enterTrigger.gameObject.AddComponent<Rigidbody>();
+                body.isKinematic = true;
+                body.useGravity = false;
+            }
             enterTrigger.size = new Vector3(2.6f, 3.4f, 1.25f);
             enterTrigger.enabled = false;
             if (enterTrigger.GetComponent<PortalEntrance>() == null)
@@ -81,51 +101,77 @@ namespace EchoIslands
         {
             if (activated) return;
             activated = true;
+            enterAfter = Time.time + .65f;
             EchoVisualOverhaul.ReskinPortal(this);
             SetVisuals(true);
             if (enterTrigger != null) enterTrigger.enabled = completeOnEnter;
             if (activationVFX != null) activationVFX.PlayActivation();
         }
 
+        void TryOpen()
+        {
+            if (HasOrb && (!requiresStaff || HasStaff)) Activate();
+        }
+
+        public void InsertStaff()
+        {
+            HasStaff = true;
+            TryOpen();
+            if (LevelFlow.Instance != null) LevelFlow.Instance.SaveCurrent();
+        }
+
+        public void RestoreRequirements(bool orb, bool staff)
+        {
+            filled = orb ? requiredOrbs : 0;
+            HasStaff = staff && requiresStaff && orb;
+            if (HasStaff)
+            {
+                var pedestal = GetComponentInChildren<StaffPedestal>();
+                if (pedestal != null) pedestal.ShowPlacedStaff();
+            }
+            TryOpen();
+        }
+
         public void TryInsertHeld()
         {
-            if (activated)
+            if (activated || IsAbsorbing || HasOrb) return;
+            Orb carried = null;
+            foreach (var orb in FindObjectsByType<Orb>(FindObjectsSortMode.None))
+                if (orb.carried) { carried = orb; break; }
+
+            if (carried == null)
             {
-                CompleteNextLevel();
+                var hud = FindAnyObjectByType<GameHUD>();
+                if (hud != null) hud.Notify("Для портала нужна сфера из тёмного мира.");
                 return;
             }
 
-            Orb carriedOrb = null;
-            var all = FindObjectsByType<Orb>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            for (int i = 0; i < all.Length; i++)
+            IsAbsorbing = true;
+            carried.Place(GetAbsorptionPoint(), () =>
             {
-                if (all[i] != null && all[i].carried)
-                {
-                    carriedOrb = all[i];
-                    break;
-                }
-            }
-
-            if (carriedOrb == null || filled >= requiredOrbs) return;
-
-            Transform socket = GetAbsorptionPoint();
-            carriedOrb.Place(socket, () =>
-            {
+                IsAbsorbing = false;
                 filled++;
-                if (filled >= requiredOrbs) Activate();
+                TryOpen();
+                if (HasOrb && requiresStaff && !HasStaff)
+                {
+                    var hud = FindAnyObjectByType<GameHUD>();
+                    if (hud != null) hud.Notify("Сфера принята. Оставьте посох на пьедестале справа.",4.2f);
+                }
+                if (LevelFlow.Instance != null) LevelFlow.Instance.SaveCurrent();
             });
         }
 
         void OnTriggerEnter(Collider other)
         {
             if (!activated || !completeOnEnter) return;
-            if (other.GetComponentInParent<FirstPersonController>() == null) return;
-            CompleteNextLevel();
+            var flow = LevelFlow.Instance;
+            if (flow == null || other.GetComponentInParent<FirstPersonController>() != flow.Controller) return;
+            TryEnter();
         }
 
         public void TryEnter()
         {
-            if (activated && completeOnEnter) CompleteNextLevel();
+            if (activated && completeOnEnter && Time.time >= enterAfter) CompleteNextLevel();
         }
 
         void CompleteNextLevel()

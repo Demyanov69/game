@@ -61,7 +61,7 @@ namespace EchoIslands
         static bool IsGeneratedDungeon(Transform tr)
         {
             for (var t = tr; t != null; t = t.parent)
-                if (t.name.Contains("_COMPLETE_DUNGEON")) return true;
+                if (t.name.StartsWith("Level_") && t.name.EndsWith("_Dungeon")) return true;
             return false;
         }
 

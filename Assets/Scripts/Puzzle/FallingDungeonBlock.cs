@@ -22,12 +22,14 @@ namespace EchoIslands
             if (countdown >= 0f)
             {
                 countdown -= Time.deltaTime;
-                if (countdown <= 0f) recovery = 3.3f;
+                if (countdown <= 0f) recovery = 2.25f;
+                else transform.position = rest + Vector3.right * (Mathf.Sin(Time.time * 62f) * .09f);
             }
             if (recovery > 0f)
             {
                 recovery -= Time.deltaTime;
-                transform.position += Vector3.down * 10f * Time.deltaTime;
+                float drop = Mathf.Min(9.4f,(2.25f-recovery)*13f);
+                transform.position = rest + Vector3.down * drop;
                 if (recovery <= 0f) { transform.position = rest; countdown = -1f; }
             }
         }

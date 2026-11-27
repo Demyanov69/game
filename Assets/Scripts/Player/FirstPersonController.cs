@@ -67,6 +67,11 @@ namespace EchoIslands
                     verticalSpeed = 0f;
             }
         }
+        const float GravityTurnSeconds = .83f;
+        float turnTime;
+        Vector3 turnStart, turnControl, turnEnd;
+        Quaternion turnFrom, turnTo;
+        public bool IsTurningGravity => turnTime > 0f;
         public GravitySide GravityOrientation { get; private set; }=GravitySide.Floor;
 
         void Awake()
@@ -83,6 +88,11 @@ namespace EchoIslands
         void Update()
         {
             if(!locked||cc==null||Time.timeScale<=0f)return;
+            if (IsTurningGravity)
+            {
+                AnimateGravityTurn();
+                return;
+            }
             bool wall = GravityOrientation != GravitySide.Floor;
             if (!wall && !cc.enabled) return;
             float sens=lookSensitivity;
@@ -114,38 +124,53 @@ namespace EchoIslands
             Vector3 displacement = (momentum + up * verticalSpeed) * Time.deltaTime;
             if (wall) MoveOnFace(displacement);
             else cc.Move(displacement);
-            if (LevelFlow.Instance != null && LevelFlow.Instance.current == 3)
-            {
-                var temple = LevelFlow.Instance.levelRoots[2].transform;
-                Vector3 local = temple.InverseTransformPoint(transform.position);
-                if (Mathf.Abs(local.x) > 8.5f || local.y < -3f || local.y > 11f || local.z < -5f)
-                    LevelFlow.Instance.Respawn();
-            }
         }
-        public void SetSlippery(bool active){slipUntil=active?Time.time+.15f:0f;}
+
+        public void SetSlippery(bool active) { slipUntil = active ? Time.time+.12f : 0f; }
+
         public void ApplyExternalMotion(Vector3 motion)
         {
-            if(enabled&&cc!=null&&cc.enabled)cc.Move(motion);
+            if (!enabled || cc == null || IsTurningGravity) return;
+            if (GravityOrientation == GravitySide.Floor && cc.enabled) cc.Move(motion);
+            else MoveOnFace(motion);
         }
-        public void SetGravitySide(GravitySide side,Vector3 landing)
+
+        public void SetGravitySide(GravitySide side, Vector3 landing, Vector3 up, Vector3 routeForward)
         {
-            if(cc==null)return;
-            cc.enabled=false;
-            Vector3 up=Vector3.up;
-            if(side==GravitySide.LeftWall)up=Vector3.right;
-            if(side==GravitySide.RightWall)up=Vector3.left;
-            if(side==GravitySide.Ceiling)up=Vector3.down;
-            transform.rotation=Quaternion.LookRotation(Vector3.forward,up);
-            transform.position=landing;
-            pitch=0f;verticalSpeed=-1f;momentum=Vector3.zero;
-            if(cameraPivot!=null)cameraPivot.localRotation=Quaternion.identity;
-            GravityOrientation=side;
+            if (cc == null || IsTurningGravity || side == GravityOrientation) return;
+            Quaternion currentFrame = Quaternion.LookRotation(routeForward, transform.up);
+            Quaternion targetFrame = Quaternion.LookRotation(routeForward, up);
+            turnFrom = transform.rotation;
+            turnTo = targetFrame * Quaternion.Inverse(currentFrame) * turnFrom;
+            turnStart = transform.position;
+            turnEnd = landing;
+            turnControl = (turnStart + turnEnd) * .5f + (transform.up + up) * 1.15f;
+            turnTime = GravityTurnSeconds;
+            GravityOrientation = side;
+            cc.enabled = false;
+            EnableWallSensor(false);
+            verticalSpeed = 0f;
+            momentum = Vector3.zero;
+            slipUntil = 0f;
             coyoteTimer = jumpBufferTimer = 0f;
-            EnableWallSensor(side != GravitySide.Floor);
-            cc.enabled = side == GravitySide.Floor;
         }
+
+        void AnimateGravityTurn()
+        {
+            turnTime = Mathf.Max(0f,turnTime-Time.deltaTime);
+            float t = Mathf.SmoothStep(0f,1f,1f-turnTime/GravityTurnSeconds);
+            Vector3 position = Vector3.Lerp(Vector3.Lerp(turnStart,turnControl,t),
+                Vector3.Lerp(turnControl,turnEnd,t),t);
+            transform.SetPositionAndRotation(position,Quaternion.Slerp(turnFrom,turnTo,t));
+            if (turnTime > 0f) return;
+            bool floor = GravityOrientation == GravitySide.Floor;
+            cc.enabled = floor;
+            EnableWallSensor(!floor);
+        }
+
         public void ResetGravity()
         {
+            turnTime = 0f;
             EnableWallSensor(false);
             pitch = 0f;
             if(cameraPivot!=null) cameraPivot.localRotation=Quaternion.identity;
